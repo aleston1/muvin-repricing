@@ -282,7 +282,7 @@ function setProgress(pct, label) {
   document.getElementById('progress-label').textContent = label;
 }
 
-function mlLink(id) { return "https://www.mercadolibre.com.ar/p/" + id; }
+function mlLink(id) { if (!id) return "#"; return "https://articulo.mercadolibre.com.ar/" + id.replace(/^MLA/, "MLA-"); }
 
 function calcSuggested(item) {
   const comps = item._competitors || [];
@@ -355,7 +355,7 @@ function renderTable() {
     const st = getStatus(item);
     const title = item.title.length > 45 ? item.title.slice(0,45)+'…' : item.title;
     const myP = '$' + item.price.toLocaleString('es-AR');
-    const compLink = s && s.cheapest_id ? `<a href="https://articulo.mercadolibre.com.ar/-${s.cheapest_id}" target="_blank" style="color:#1e7e34;text-decoration:none;font-weight:500">$${s.min_comp.toLocaleString('es-AR')} ↗</a>` : (s ? '$'+s.min_comp.toLocaleString('es-AR') : '—');
+    const compLink = s && s.cheapest_id ? `<a href="${mlLink(s.cheapest_id)}" target="_blank" style="color:#1e7e34;text-decoration:none;font-weight:500">$${s.min_comp.toLocaleString('es-AR')} ↗</a>` : (s ? '$'+s.min_comp.toLocaleString('es-AR') : '—');
     const compP = compLink;
     const diff = s ? `<span class="diff-${st === 'none' ? 'ok' : st}">${s.diff_pct > 0 ? '+' : ''}${s.diff_pct}%</span>` : '—';
     const sug = s ? '$'+s.suggested.toLocaleString('es-AR') : '—';
@@ -395,7 +395,7 @@ function openModal(id) {
   document.getElementById('modal-title').textContent = item.title.slice(0,60) + (item.title.length > 60 ? '…' : '');
 
   const compsHtml = (item._competitors || []).map(c =>
-    `<div class="modal-row"><span class="modal-label">${c.title?.slice(0,35) || 'Competidor'}…</span><a href="https://articulo.mercadolibre.com.ar/-${c.item_id}" target="_blank" style="color:#1e7e34;font-weight:500">$${c.price.toLocaleString('es-AR')} ↗</a></div>`
+    `<div class="modal-row"><span class="modal-label">${c.title?.slice(0,35) || 'Competidor'}…</span><a href="${mlLink(c.item_id)}" target="_blank" style="color:#1e7e34;font-weight:500">$${c.price.toLocaleString('es-AR')} ↗</a></div>`
   ).join('') || '<div class="modal-row"><span class="modal-label">Sin competidores en catálogo ML</span></div>';
 
   document.getElementById('modal-body').innerHTML = `
@@ -403,7 +403,7 @@ function openModal(id) {
     <div class="modal-row"><span class="modal-label">Precio actual</span><span style="font-weight:600">$${item.price.toLocaleString('es-AR')}</span></div>
     <div class="modal-row"><span class="modal-label">Condición</span><span>${item.condition === 'new' ? 'Nuevo' : 'Usado'}</span></div>
     ${s ? `
-    <div class="modal-row"><span class="modal-label">Competidor más barato</span><span>${s.cheapest_id ? `<a href="https://articulo.mercadolibre.com.ar/-${s.cheapest_id}" target="_blank" style="color:#1e7e34">$${s.min_comp.toLocaleString('es-AR')} ↗</a>` : '$'+s.min_comp.toLocaleString('es-AR')}</span></div>
+    <div class="modal-row"><span class="modal-label">Competidor más barato</span><span>${s.cheapest_id ? `<a href="${mlLink(s.cheapest_id)}" target="_blank" style="color:#1e7e34">$${s.min_comp.toLocaleString('es-AR')} ↗</a>` : '$'+s.min_comp.toLocaleString('es-AR')}</span></div>
     <div class="modal-row"><span class="modal-label">Promedio competencia</span><span>$${s.avg_comp.toLocaleString('es-AR')}</span></div>
     <div class="modal-row"><span class="modal-label">Diferencia</span><span class="${s.diff_pct > 5 ? 'diff-bad' : 'diff-ok'}">${s.diff_pct > 0 ? '+' : ''}${s.diff_pct}%</span></div>
     <div class="modal-row"><span class="modal-label" style="font-weight:600">Precio sugerido</span><span style="font-weight:600;color:#1e7e34;font-size:16px">$${s.suggested.toLocaleString('es-AR')}</span></div>
