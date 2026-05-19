@@ -94,6 +94,12 @@
 
   <div class="config-card" id="config-card" style="display:none">
     <h2>Parámetros de repricing</h2>
+    <div class="config-row" style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e5e5e0">
+      <label style="font-size:13px;color:#555">Actualizar costos (Excel)</label>
+      <input type="file" id="costos-file" accept=".xlsx" style="font-size:13px">
+      <button class="btn btn-sm" onclick="uploadCostos()">Subir Excel</button>
+      <span id="costos-status" style="font-size:12px;color:#888"></span>
+    </div>
     <div class="config-row">
       <label>Estrategia</label>
       <select id="strategy" onchange="recalcAll()">
@@ -198,6 +204,27 @@ async function api(path) {
   const r = await fetch(path);
   if (!r.ok) throw new Error(r.status);
   return r.json();
+}
+
+async function uploadCostos() {
+  const fileInput = document.getElementById('costos-file');
+  const statusEl = document.getElementById('costos-status');
+  if (!fileInput.files.length) { alert('Seleccioná un archivo Excel primero'); return; }
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  statusEl.textContent = 'Subiendo...';
+  try {
+    const r = await fetch('/api/upload-costos', { method: 'POST', body: formData });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    statusEl.textContent = `✅ ${d.skus_cargados.toLocaleString()} SKUs cargados`;
+    statusEl.style.color = '#1e7e34';
+    // Recalcular si ya hay publicaciones cargadas
+    if (allItems.length) recalcAll();
+  } catch(e) {
+    statusEl.textContent = '❌ Error: ' + e.message;
+    statusEl.style.color = '#c0392b';
+  }
 }
 
 async function startLoad() {
@@ -306,6 +333,12 @@ function calcSuggested(item) {
   const avgP = prices.reduce((a,b)=>a+b,0)/prices.length;
   const cheapest = comps.reduce((a,b) => a.price <= b.price ? a : b);
   let target = strategy === 'beat' ? minP * 0.97 : strategy === 'match' ? minP : avgP;
+  // Respetar piso de rentabilidad si hay costo cargado
+  if (item._costo && item._costo > 0) {
+    const minMarginPct = parseFloat(document.getElementById('min-margin').value) / 100;
+    const piso = Math.round(item._costo * (1 + minMarginPct));
+    if (target < piso) target = piso;
+  }
   return {
     suggested:      Math.round(target),
     min_comp:       Math.round(minP),
@@ -368,6 +401,9 @@ function renderTable() {
     const st = getStatus(item);
     const title = item.title.length > 45 ? item.title.slice(0,45)+'…' : item.title;
     const myP = `<a href="${mlLink(item.id)}" target="_blank" style="color:#1a1a1a;text-decoration:none;font-weight:500">$${item.price.toLocaleString('es-AR')} ↗</a>`;
+    const costo = item._costo ? '$'+Math.round(item._costo).toLocaleString('es-AR') : '—';
+    const margen = item._costo && item.price > 0 ? Math.round((item.price / item._costo - 1) * 100) + '%' : '—';
+    const margenClass = item._costo ? (item.price < item._costo * 1.1 ? 'diff-bad' : item.price < item._costo * 1.25 ? 'diff-warn' : 'diff-ok') : '';
     const compLink = s && s.cheapest_id ? `<a href="${mlLink(s.cheapest_id)}" target="_blank" style="color:#1e7e34;text-decoration:none;font-weight:500">$${s.min_comp.toLocaleString('es-AR')} ↗</a>` : (s ? '$'+s.min_comp.toLocaleString('es-AR') : '—');
     const compP = compLink;
     const diff = s ? `<span class="diff-${st === 'none' ? 'ok' : st}">${s.diff_pct > 0 ? '+' : ''}${s.diff_pct}%</span>` : '—';
@@ -379,6 +415,8 @@ function renderTable() {
       <td><span style="font-weight:500">${title}</span><br><span style="font-size:11px;color:#aaa">${item.id}</span></td>
       <td><span class="badge ${badgeMap[st]}">${labelMap[st]}</span></td>
       <td class="price">${myP}</td>
+      <td style="color:#888">${costo}</td>
+      <td><span class="${margenClass}">${margen}</span></td>
       <td>${compP}</td>
       <td>${diff}</td>
       <td class="price" style="color:#1e7e34">${sug}</td>
@@ -415,6 +453,10 @@ function openModal(id) {
     <div class="modal-row"><span class="modal-label">ID</span><span style="font-family:monospace;font-size:12px">${item.id}</span></div>
     <div class="modal-row"><span class="modal-label">Precio actual</span><span style="font-weight:600">$${item.price.toLocaleString('es-AR')}</span></div>
     <div class="modal-row"><span class="modal-label">Condición</span><span>${item.condition === 'new' ? 'Nuevo' : 'Usado'}</span></div>
+    <div class="modal-row"><span class="modal-label">Comisión ML</span><span>${item._fee_pct != null ? (item._fee_pct*100).toFixed(1)+'% ($'+Math.round(item._fee_amt||0).toLocaleString('es-AR')+')' : '—'}</span></div>
+    <div class="modal-row"><span class="modal-label">SKU</span><span style="font-family:monospace">${item._sku_raiz || '—'}</span></div>
+    <div class="modal-row"><span class="modal-label">Costo (sin IVA)</span><span>${item._costo ? '$'+Math.round(item._costo).toLocaleString('es-AR') : '❔ Sin datos'}</span></div>
+    <div class="modal-row"><span class="modal-label">Margen actual</span><span class="${item._costo ? (item.price < item._costo*1.1 ? 'diff-bad' : 'diff-ok') : ''}">${item._costo ? Math.round((item.price/item._costo-1)*100)+'%' : '—'}</span></div>
     <div class="modal-row"><span class="modal-label">Tipo de publicación</span><span>${listingLabel(item.listing_type_id)}</span></div>
     ${s ? `
     <div class="modal-row"><span class="modal-label">Competidor más barato</span><span>${s.cheapest_id ? `<a href="${mlLink(s.cheapest_id)}" target="_blank" style="color:#1e7e34">$${s.min_comp.toLocaleString('es-AR')} ↗</a>` : '$'+s.min_comp.toLocaleString('es-AR')}</span></div>
