@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muvin — Repricing ML</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#1a1a1a;font-size:14px}
+  header{background:#fff;border-bottom:1px solid #e5e5e0;padding:14px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+  header h1{font-size:16px;font-weight:600}
+  header p{font-size:12px;color:#888;margin-top:1px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+  .badge-green{background:#e6f4ea;color:#1e7e34}
+  .badge-amber{background:#fff3cd;color:#856404}
+  .badge-red{background:#fce8e8;color:#c0392b}
+  .badge-gray{background:#f0f0ec;color:#666}
+  .main{padding:20px 24px;max-width:1200px;margin:0 auto}
+  .config-card{background:#fff;border:1px solid #e5e5e0;border-radius:10px;padding:16px 20px;margin-bottom:16px}
+  .config-card h2{font-size:13px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+  .config-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .config-row label{font-size:13px;color:#555;white-space:nowrap}
+  .config-row input,.config-row select{padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:#fff}
+  .config-row input[type=number]{width:90px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .stat{background:#fff;border:1px solid #e5e5e0;border-radius:10px;padding:14px 16px}
+  .stat-label{font-size:11px;color:#888;margin-bottom:4px}
+  .stat-value{font-size:24px;font-weight:600}
+  .stat-sub{font-size:11px;color:#aaa;margin-top:2px}
+  .controls{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+  .controls input,.controls select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:#fff}
+  .controls input{flex:1;min-width:180px}
+  .btn{padding:8px 16px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#1a1a1a;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;transition:background .15s}
+  .btn:hover{background:#f5f5f0}
+  .btn-primary{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+  .btn-primary:hover{background:#333}
+  .btn-primary:disabled{background:#aaa;border-color:#aaa;cursor:default}
+  .btn-sm{padding:5px 10px;font-size:12px}
+  .btn-green{background:#e6f4ea;color:#1e7e34;border-color:#b7dfbf}
+  .btn-green:hover{background:#d4edda}
+  .table-wrap{background:#fff;border:1px solid #e5e5e0;border-radius:10px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#fafaf8;color:#888;font-weight:500;padding:10px 14px;text-align:left;border-bottom:1px solid #e5e5e0;white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid #f0f0ec;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#fafaf8}
+  .price{font-weight:500}
+  .diff-ok{color:#1e7e34;font-weight:500}
+  .diff-warn{color:#856404;font-weight:500}
+  .diff-bad{color:#c0392b;font-weight:500}
+  .empty-row td{text-align:center;padding:40px;color:#aaa}
+  .progress-bar{height:4px;background:#e5e5e0;border-radius:2px;margin-bottom:16px;overflow:hidden}
+  .progress-fill{height:100%;background:#1a1a1a;border-radius:2px;transition:width .3s}
+  .progress-label{font-size:12px;color:#888;margin-bottom:6px}
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center}
+  .modal-bg.open{display:flex}
+  .modal{background:#fff;border-radius:12px;padding:24px;width:min(480px,90vw);max-height:85vh;overflow-y:auto}
+  .modal h2{font-size:15px;font-weight:600;margin-bottom:16px}
+  .modal-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0ec;font-size:13px}
+  .modal-row:last-child{border-bottom:none}
+  .modal-label{color:#888}
+  .modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+  .setup-card{background:#fff;border:1px solid #e5e5e0;border-radius:10px;padding:24px;margin-bottom:16px}
+  .setup-card h2{font-size:15px;font-weight:600;margin-bottom:8px}
+  .setup-card p{color:#666;font-size:13px;margin-bottom:16px}
+  .token-input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace;margin-bottom:10px}
+  @media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}.config-row,.controls{flex-direction:column;align-items:stretch}}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Muvin — Repricing MercadoLibre</h1>
+    <p id="header-sub">Ingresá tu token para comenzar</p>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px">
+    <button class="btn btn-sm" onclick="exportCSV()">Exportar CSV</button>
+    <button class="btn btn-sm btn-primary" id="btn-load" onclick="startLoad()" disabled>Cargar publicaciones</button>
+  </div>
+</header>
+
+<div class="main">
+
+  <div class="setup-card" id="setup-card">
+    <h2>Configuración inicial</h2>
+    <p>Pegá tu Access Token de MercadoLibre. Lo podés renovar cada 6 horas desde la app.</p>
+    <input class="token-input" id="token-input" placeholder="APP_USR-..." type="password">
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="btn btn-primary" onclick="saveToken()">Guardar y conectar</button>
+      <span id="token-status" style="font-size:12px;color:#888"></span>
+    </div>
+  </div>
+
+  <div class="config-card" id="config-card" style="display:none">
+    <h2>Parámetros de repricing</h2>
+    <div class="config-row">
+      <label>Estrategia</label>
+      <select id="strategy" onchange="recalcAll()">
+        <option value="beat">Ganar al más barato (−3%)</option>
+        <option value="match">Igualar al más barato</option>
+        <option value="avg">Precio promedio del mercado</option>
+      </select>
+      <label>Comisión ML %</label>
+      <input type="number" id="ml-fee" value="13" min="0" max="30" onchange="recalcAll()">
+      <label>Margen mínimo %</label>
+      <input type="number" id="min-margin" value="15" min="0" max="100" onchange="recalcAll()">
+      <button class="btn btn-sm" onclick="updateAll()" style="margin-left:auto">Actualizar todos los altos 🔴</button>
+    </div>
+  </div>
+
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat"><div class="stat-label">Publicaciones analizadas</div><div class="stat-value" id="s-total">0</div><div class="stat-sub" id="s-total-sub"></div></div>
+    <div class="stat"><div class="stat-label">Competitivos ✅</div><div class="stat-value" style="color:#1e7e34" id="s-ok">0</div></div>
+    <div class="stat"><div class="stat-label">Precio alto 🔴</div><div class="stat-value" style="color:#c0392b" id="s-bad">0</div></div>
+    <div class="stat"><div class="stat-label">Sin competencia ❔</div><div class="stat-value" style="color:#aaa" id="s-none">0</div></div>
+  </div>
+
+  <div id="progress-section" style="display:none">
+    <div class="progress-label" id="progress-label">Cargando...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  </div>
+
+  <div class="controls" id="controls" style="display:none">
+    <input type="text" id="search-input" placeholder="Buscar publicación..." oninput="filterAndRender()">
+    <select id="filter-status" onchange="filterAndRender()">
+      <option value="">Todos</option>
+      <option value="ok">Competitivos ✅</option>
+      <option value="warn">Revisar ⚠️</option>
+      <option value="bad">Precio alto 🔴</option>
+      <option value="none">Sin competencia ❔</option>
+    </select>
+    <select id="sort-col" onchange="filterAndRender()">
+      <option value="diff">Ordenar por diferencia</option>
+      <option value="price">Ordenar por precio</option>
+      <option value="title">Ordenar por nombre</option>
+    </select>
+  </div>
+
+  <div class="table-wrap" id="table-wrap" style="display:none">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:35%">Publicación</th>
+          <th>Estado</th>
+          <th>Mi precio</th>
+          <th>Comp. mín</th>
+          <th>Diferencia</th>
+          <th>Sugerido</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-sm btn-primary" id="modal-btn-update">Actualizar precio</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem('ml_token') || '';
+let USER_ID = '246901020';
+let allItems = [];
+let filtered = [];
+let loading = false;
+
+if (TOKEN) {
+  document.getElementById('token-input').value = TOKEN;
+  activateApp();
+}
+
+function saveToken() {
+  const t = document.getElementById('token-input').value.trim();
+  if (!t) return;
+  TOKEN = t;
+  localStorage.setItem('ml_token', t);
+  activateApp();
+}
+
+function activateApp() {
+  document.getElementById('setup-card').style.display = 'none';
+  document.getElementById('config-card').style.display = 'block';
+  document.getElementById('btn-load').disabled = false;
+  document.getElementById('header-sub').textContent = 'Token configurado ✅  —  Hacé clic en "Cargar publicaciones"';
+}
+
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function startLoad() {
+  if (loading) return;
+  loading = true;
+  allItems = [];
+  filtered = [];
+
+  document.getElementById('btn-load').disabled = true;
+  document.getElementById('btn-load').textContent = 'Cargando...';
+  document.getElementById('stats').style.display = 'grid';
+  document.getElementById('progress-section').style.display = 'block';
+  document.getElementById('controls').style.display = 'none';
+  document.getElementById('table-wrap').style.display = 'none';
+  document.getElementById('tbody').innerHTML = '';
+
+  try {
+    // Traer primeras 500 publicaciones en lotes de 50
+    const limit = 50;
+    let offset = 0;
+    let total = null;
+    let allIds_items = [];
+
+    setProgress(0, 'Trayendo publicaciones...');
+
+    while (true) {
+      const data = await api(`/api/items?token=${encodeURIComponent(TOKEN)}&user_id=${USER_ID}&limit=${limit}&offset=${offset}`);
+      if (data.error) throw new Error(data.error);
+      total = total || data.total;
+      allIds_items = allIds_items.concat(data.items);
+      offset += limit;
+      if (data.items.length < limit || allIds_items.length >= 500) break;
+    }
+
+    const items = allIds_items.slice(0, 500);
+    setProgress(10, `${items.length} publicaciones cargadas. Buscando competidores...`);
+
+    // Buscar competidores de a uno
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      let comps = [];
+      if (item.catalog_product_id) {
+        try {
+          const d = await api(`/api/competitors?token=${encodeURIComponent(TOKEN)}&catalog_id=${item.catalog_product_id}&user_id=${USER_ID}`);
+          comps = d.competitors || [];
+        } catch(e) {}
+      }
+      item._competitors = comps;
+      item._suggested = calcSuggested(item);
+      allItems.push(item);
+
+      const pct = 10 + Math.round((i + 1) / items.length * 90);
+      setProgress(pct, `[${i+1}/${items.length}] ${item.title.slice(0,50)}`);
+
+      // Render parcial cada 20
+      if ((i + 1) % 20 === 0 || i === items.length - 1) {
+        filtered = applyFilters(allItems);
+        renderTable();
+        updateStats();
+        if (i === 0) {
+          document.getElementById('controls').style.display = 'flex';
+          document.getElementById('table-wrap').style.display = 'block';
+        }
+      }
+    }
+
+    setProgress(100, `✅ Listo — ${items.length} publicaciones analizadas`);
+    document.getElementById('controls').style.display = 'flex';
+    document.getElementById('table-wrap').style.display = 'block';
+
+  } catch(e) {
+    setProgress(0, `❌ Error: ${e.message}. ¿El token expiró?`);
+  }
+
+  document.getElementById('btn-load').disabled = false;
+  document.getElementById('btn-load').textContent = 'Recargar';
+  loading = false;
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = label;
+}
+
+function calcSuggested(item) {
+  const comps = item._competitors || [];
+  if (!comps.length) return null;
+  const strategy = document.getElementById('strategy').value;
+  const prices = comps.map(c => c.price);
+  const minP = Math.min(...prices);
+  const avgP = prices.reduce((a,b)=>a+b,0)/prices.length;
+  let target = strategy === 'beat' ? minP * 0.97 : strategy === 'match' ? minP : avgP;
+  return {
+    suggested: Math.round(target),
+    min_comp:  Math.round(minP),
+    avg_comp:  Math.round(avgP),
+    diff_pct:  Math.round((item.price - minP) / minP * 100 * 10) / 10,
+  };
+}
+
+function recalcAll() {
+  for (const item of allItems) item._suggested = calcSuggested(item);
+  filtered = applyFilters(allItems);
+  renderTable();
+  updateStats();
+}
+
+function getStatus(item) {
+  const s = item._suggested;
+  if (!s) return 'none';
+  if (s.diff_pct <= 2) return 'ok';
+  if (s.diff_pct <= 10) return 'warn';
+  return 'bad';
+}
+
+function applyFilters(items) {
+  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+  const f = document.getElementById('filter-status')?.value || '';
+  const s = document.getElementById('sort-col')?.value || 'diff';
+  let out = items.filter(i => {
+    const mq = !q || i.title.toLowerCase().includes(q) || i.id.includes(q);
+    const ms = !f || getStatus(i) === f;
+    return mq && ms;
+  });
+  out.sort((a,b) => {
+    if (s === 'price') return b.price - a.price;
+    if (s === 'title') return a.title.localeCompare(b.title);
+    const da = a._suggested?.diff_pct ?? -999;
+    const db = b._suggested?.diff_pct ?? -999;
+    return db - da;
+  });
+  return out;
+}
+
+function filterAndRender() {
+  filtered = applyFilters(allItems);
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No hay publicaciones para mostrar</td></tr>';
+    return;
+  }
+  const badgeMap = {ok:'badge-green',warn:'badge-amber',bad:'badge-red',none:'badge-gray'};
+  const labelMap = {ok:'Competitivo',warn:'Revisar',bad:'Precio alto',none:'Sin datos'};
+  tbody.innerHTML = filtered.map(item => {
+    const s = item._suggested;
+    const st = getStatus(item);
+    const title = item.title.length > 45 ? item.title.slice(0,45)+'…' : item.title;
+    const myP = '$' + item.price.toLocaleString('es-AR');
+    const compP = s ? '$'+s.min_comp.toLocaleString('es-AR') : '—';
+    const diff = s ? `<span class="diff-${st === 'none' ? 'ok' : st}">${s.diff_pct > 0 ? '+' : ''}${s.diff_pct}%</span>` : '—';
+    const sug = s ? '$'+s.suggested.toLocaleString('es-AR') : '—';
+    const actionBtn = s && s.suggested !== item.price
+      ? `<button class="btn btn-sm btn-green" onclick="updatePrice('${item.id}',${s.suggested})">Actualizar</button>`
+      : '';
+    return `<tr>
+      <td><span style="font-weight:500">${title}</span><br><span style="font-size:11px;color:#aaa">${item.id}</span></td>
+      <td><span class="badge ${badgeMap[st]}">${labelMap[st]}</span></td>
+      <td class="price">${myP}</td>
+      <td>${compP}</td>
+      <td>${diff}</td>
+      <td class="price" style="color:#1e7e34">${sug}</td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-sm" onclick="openModal('${item.id}')">Ver</button>
+        ${actionBtn}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function updateStats() {
+  const total = allItems.length;
+  const ok   = allItems.filter(i => getStatus(i) === 'ok').length;
+  const bad  = allItems.filter(i => getStatus(i) === 'bad').length;
+  const none = allItems.filter(i => getStatus(i) === 'none').length;
+  document.getElementById('s-total').textContent = total;
+  document.getElementById('s-ok').textContent = ok;
+  document.getElementById('s-bad').textContent = bad;
+  document.getElementById('s-none').textContent = none;
+}
+
+function openModal(id) {
+  const item = allItems.find(i => i.id === id);
+  if (!item) return;
+  const s = item._suggested;
+  document.getElementById('modal-title').textContent = item.title.slice(0,60) + (item.title.length > 60 ? '…' : '');
+
+  const compsHtml = (item._competitors || []).map(c =>
+    `<div class="modal-row"><span class="modal-label">${c.title?.slice(0,35) || 'Competidor'}…</span><span>$${c.price.toLocaleString('es-AR')}</span></div>`
+  ).join('') || '<div class="modal-row"><span class="modal-label">Sin competidores en catálogo ML</span></div>';
+
+  document.getElementById('modal-body').innerHTML = `
+    <div class="modal-row"><span class="modal-label">ID</span><span style="font-family:monospace;font-size:12px">${item.id}</span></div>
+    <div class="modal-row"><span class="modal-label">Precio actual</span><span style="font-weight:600">$${item.price.toLocaleString('es-AR')}</span></div>
+    <div class="modal-row"><span class="modal-label">Condición</span><span>${item.condition === 'new' ? 'Nuevo' : 'Usado'}</span></div>
+    ${s ? `
+    <div class="modal-row"><span class="modal-label">Competidor más barato</span><span>$${s.min_comp.toLocaleString('es-AR')}</span></div>
+    <div class="modal-row"><span class="modal-label">Promedio competencia</span><span>$${s.avg_comp.toLocaleString('es-AR')}</span></div>
+    <div class="modal-row"><span class="modal-label">Diferencia</span><span class="${s.diff_pct > 5 ? 'diff-bad' : 'diff-ok'}">${s.diff_pct > 0 ? '+' : ''}${s.diff_pct}%</span></div>
+    <div class="modal-row"><span class="modal-label" style="font-weight:600">Precio sugerido</span><span style="font-weight:600;color:#1e7e34;font-size:16px">$${s.suggested.toLocaleString('es-AR')}</span></div>
+    ` : ''}
+    <div style="margin:12px 0 6px;font-size:12px;color:#aaa">Competidores encontrados</div>
+    ${compsHtml}
+    <div style="margin-top:12px">
+      <label style="font-size:12px;color:#888">Precio personalizado</label>
+      <input type="number" id="custom-price" value="${s ? s.suggested : item.price}" style="width:100%;margin-top:4px;padding:8px;border:1px solid #ddd;border-radius:6px">
+    </div>
+  `;
+
+  document.getElementById('modal-btn-update').onclick = () => {
+    const p = parseInt(document.getElementById('custom-price').value);
+    if (p > 0) updatePrice(id, p);
+  };
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-bg').classList.remove('open');
+}
+
+async function updatePrice(id, price) {
+  const item = allItems.find(i => i.id === id);
+  if (!item) return;
+  if (!confirm(`¿Actualizar "${item.title.slice(0,40)}" de $${item.price.toLocaleString('es-AR')} a $${price.toLocaleString('es-AR')}?`)) return;
+  try {
+    const r = await fetch('/api/update-price', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({token: TOKEN, item_id: id, price})
+    });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    item.price = price;
+    item._suggested = calcSuggested(item);
+    closeModal();
+    filtered = applyFilters(allItems);
+    renderTable();
+    updateStats();
+    alert(`✅ Precio actualizado a $${price.toLocaleString('es-AR')}`);
+  } catch(e) {
+    alert('❌ Error: ' + e.message);
+  }
+}
+
+async function updateAll() {
+  const toUpdate = allItems.filter(i => getStatus(i) === 'bad');
+  if (!toUpdate.length) { alert('No hay publicaciones con precio alto'); return; }
+  if (!confirm(`¿Actualizar ${toUpdate.length} publicaciones con precio alto?`)) return;
+  let ok = 0;
+  for (const item of toUpdate) {
+    const s = item._suggested;
+    if (!s) continue;
+    try {
+      await fetch('/api/update-price', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({token: TOKEN, item_id: item.id, price: s.suggested})
+      });
+      item.price = s.suggested;
+      item._suggested = calcSuggested(item);
+      ok++;
+    } catch(e) {}
+    await new Promise(r => setTimeout(r, 400));
+  }
+  filtered = applyFilters(allItems);
+  renderTable();
+  updateStats();
+  alert(`✅ ${ok}/${toUpdate.length} precios actualizados`);
+}
+
+function exportCSV() {
+  if (!allItems.length) { alert('Primero cargá las publicaciones'); return; }
+  const rows = [['ID','Título','Precio actual','Competidor min','Diferencia %','Precio sugerido','Estado']];
+  for (const item of allItems) {
+    const s = item._suggested;
+    rows.push([item.id, '"'+item.title.replace(/"/g,'""')+'"', item.price,
+      s?s.min_comp:'', s?s.diff_pct:'', s?s.suggested:'', getStatus(item)]);
+  }
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'muvin_repricing.csv';
+  a.click();
+}
+</script>
+</body>
+</html>
