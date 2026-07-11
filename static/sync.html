@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muvin — Sincronización de catálogo</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#1a1a1a;font-size:14px}
+  header{background:#fff;border-bottom:1px solid #e5e5e0;padding:14px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+  header h1{font-size:16px;font-weight:600}
+  header p{font-size:12px;color:#888;margin-top:1px}
+  header a{color:#555;font-size:13px;text-decoration:none}
+  header a:hover{text-decoration:underline}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+  .badge-green{background:#e6f4ea;color:#1e7e34}
+  .badge-amber{background:#fff3cd;color:#856404}
+  .badge-red{background:#fce8e8;color:#c0392b}
+  .badge-gray{background:#f0f0ec;color:#666}
+  .main{padding:20px 24px;max-width:1280px;margin:0 auto}
+  .config-card{background:#fff;border:1px solid #e5e5e0;border-radius:10px;padding:16px 20px;margin-bottom:16px}
+  .config-card h2{font-size:13px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px}
+  .grid-cfg{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 14px;margin-bottom:12px}
+  .grid-cfg label{display:block;font-size:12px;color:#666;margin-bottom:3px}
+  .grid-cfg input{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace}
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+  .stat{background:#fff;border:1px solid #e5e5e0;border-radius:10px;padding:14px 16px}
+  .stat-label{font-size:11px;color:#888;margin-bottom:4px}
+  .stat-value{font-size:24px;font-weight:600}
+  .controls{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+  .controls input[type=text],.controls select{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;background:#fff}
+  .controls input[type=text]{flex:1;min-width:180px}
+  .btn{padding:8px 16px;border-radius:6px;border:1px solid #ddd;background:#fff;color:#1a1a1a;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;transition:background .15s}
+  .btn:hover{background:#f5f5f0}
+  .btn-primary{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+  .btn-primary:hover{background:#333}
+  .btn-primary:disabled{background:#aaa;border-color:#aaa;cursor:default}
+  .btn-sm{padding:5px 10px;font-size:12px}
+  .btn-green{background:#e6f4ea;color:#1e7e34;border-color:#b7dfbf}
+  .btn-green:hover{background:#d4edda}
+  .table-wrap{background:#fff;border:1px solid #e5e5e0;border-radius:10px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#fafaf8;color:#888;font-weight:500;padding:10px 14px;text-align:left;border-bottom:1px solid #e5e5e0;white-space:nowrap}
+  td{padding:10px 14px;border-bottom:1px solid #f0f0ec;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#fafaf8}
+  .empty-row td{text-align:center;padding:40px;color:#aaa}
+  .progress-label{font-size:12px;color:#888;margin-bottom:8px;min-height:16px}
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:flex-start;justify-content:center;overflow-y:auto;padding:30px 12px}
+  .modal-bg.open{display:flex}
+  .modal{background:#fff;border-radius:12px;padding:24px;width:min(860px,96vw)}
+  .modal h2{font-size:15px;font-weight:600;margin-bottom:4px}
+  .modal .sub{font-size:12px;color:#888;margin-bottom:16px}
+  .w-section{margin-bottom:18px}
+  .w-section h3{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+  .w-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .w-row > div{flex:1;min-width:140px}
+  .w-row label{display:block;font-size:12px;color:#666;margin-bottom:3px}
+  .modal input[type=text],.modal input[type=number],.modal select,.modal textarea{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px}
+  .modal textarea{font-family:inherit;min-height:170px;resize:vertical;line-height:1.45}
+  .fotos-grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .foto{position:relative;width:86px;height:86px;border:1px solid #ddd;border-radius:8px;overflow:hidden;background:#fafaf8}
+  .foto img{width:100%;height:100%;object-fit:cover}
+  .foto .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:1}
+  .foto .ppal{position:absolute;bottom:0;left:0;right:0;background:rgba(26,26,26,.75);color:#fff;font-size:10px;text-align:center;padding:1px 0}
+  .hint{font-size:11px;color:#999;margin-top:4px}
+  .result-box{font-size:13px;padding:10px 12px;border-radius:8px;margin-top:10px;display:none;word-break:break-word}
+  .result-ok{display:block;background:#e6f4ea;color:#1e7e34}
+  .result-err{display:block;background:#fce8e8;color:#c0392b;white-space:pre-wrap}
+  .modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+  .var-table{width:100%;font-size:12px}
+  .var-table input,.var-table select{padding:5px 8px !important;font-size:12px !important}
+  .link-ml,.link-tn{font-size:12px;text-decoration:none}
+  .link-ml{color:#2968c8}.link-tn{color:#2968c8}
+  @media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Muvin — Sincronización de catálogo</h1>
+    <p>ERP (Hansa) → Mercado Libre + Tiendanube</p>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:14px;align-items:center">
+    <a href="/">← Repricing ML</a>
+    <button class="btn btn-primary" id="btn-analizar" onclick="analizar()">Analizar catálogo</button>
+  </div>
+</header>
+
+<div class="main">
+
+  <div class="config-card">
+    <h2>Configuración <span style="font-weight:400;text-transform:none;letter-spacing:0">(se guarda en este navegador)</span></h2>
+    <div class="grid-cfg">
+      <div><label>Token Mercado Libre</label><input id="cfg-ml-token" type="password" placeholder="APP_USR-..."></div>
+      <div><label>User ID Mercado Libre</label><input id="cfg-ml-user" placeholder="246901020"></div>
+      <div><label>Store ID Tiendanube</label><input id="cfg-tn-store" placeholder="123456"></div>
+      <div><label>Token Tiendanube</label><input id="cfg-tn-token" type="password" placeholder="access token"></div>
+      <div><label>API key Anthropic (descripciones IA, opcional)</label><input id="cfg-ai-key" type="password" placeholder="sk-ant-..."></div>
+      <div><label>ID planilla de stock (Google Sheets)</label><input id="cfg-sheet" placeholder="ID de la planilla"></div>
+    </div>
+    <button class="btn btn-sm" onclick="saveCfg(true)">Guardar configuración</button>
+    <span id="cfg-status" style="font-size:12px;color:#1e7e34;margin-left:8px"></span>
+  </div>
+
+  <div class="progress-label" id="progress"></div>
+
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat"><div class="stat-label">SKUs en ERP con stock</div><div class="stat-value" id="st-erp">–</div></div>
+    <div class="stat"><div class="stat-label">Publicados en ML</div><div class="stat-value" id="st-ml">–</div></div>
+    <div class="stat"><div class="stat-label">Publicados en TN</div><div class="stat-value" id="st-tn">–</div></div>
+    <div class="stat"><div class="stat-label">Falta en alguna</div><div class="stat-value" id="st-falta">–</div></div>
+    <div class="stat"><div class="stat-label">Falta en ambas</div><div class="stat-value" id="st-ambas">–</div></div>
+  </div>
+
+  <div class="controls" id="filtros" style="display:none">
+    <input type="text" id="f-buscar" placeholder="Buscar por SKU o nombre..." oninput="render()">
+    <select id="f-estado" onchange="render()">
+      <option value="falta">Falta en alguna plataforma</option>
+      <option value="falta-ml">Falta en Mercado Libre</option>
+      <option value="falta-tn">Falta en Tiendanube</option>
+      <option value="falta-ambas">Falta en ambas</option>
+      <option value="todos">Todos</option>
+    </select>
+    <label style="font-size:13px;color:#555;display:flex;align-items:center;gap:5px">
+      <input type="checkbox" id="f-stock" checked onchange="render()"> Solo con stock &gt; 0
+    </label>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>SKU raíz</th><th>Producto</th><th style="text-align:right">Stock</th>
+        <th style="text-align:center">Var.</th><th>Mercado Libre</th><th>Tiendanube</th><th></th>
+      </tr></thead>
+      <tbody id="tbody">
+        <tr class="empty-row"><td colspan="7">Configurá las credenciales y tocá “Analizar catálogo”.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Wizard de publicación -->
+<div class="modal-bg" id="wizard-bg">
+  <div class="modal">
+    <h2 id="w-titulo-modal">Preparar publicación</h2>
+    <div class="sub" id="w-sub"></div>
+
+    <div class="w-section">
+      <h3>Publicación</h3>
+      <div class="w-row">
+        <div style="flex:3">
+          <label>Título <span id="w-titulo-count" style="color:#aaa"></span></label>
+          <input type="text" id="w-titulo" maxlength="60" oninput="tituloCount()">
+        </div>
+        <div><label>Precio (ARS)</label><input type="number" id="w-precio" min="0" step="0.01"></div>
+        <div><label>Cantidad</label><input type="number" id="w-cantidad" min="0" step="1"></div>
+      </div>
+      <div class="w-row">
+        <div style="flex:2">
+          <label>Categoría ML <button class="btn btn-sm" style="padding:2px 8px" onclick="predecirCategoria()">↻ Predecir</button></label>
+          <select id="w-categoria"></select>
+        </div>
+        <div>
+          <label>Tipo publicación ML</label>
+          <select id="w-listing">
+            <option value="gold_special">Clásica (gold_special)</option>
+            <option value="gold_pro">Premium (gold_pro)</option>
+          </select>
+        </div>
+        <div>
+          <label>Publicar en TN como</label>
+          <select id="w-tn-pub">
+            <option value="true">Visible</option>
+            <option value="false">Borrador (oculto)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="w-section" id="w-var-section" style="display:none">
+      <h3>Variantes
+        <label style="font-weight:400;text-transform:none;letter-spacing:0;margin-left:8px">
+          <input type="checkbox" id="w-var-usar" checked onchange="render()"> publicar con variantes
+        </label>
+      </h3>
+      <table class="var-table"><thead><tr>
+        <th>SKU</th><th>Sufijo</th><th>Atributo</th><th>Valor</th><th style="text-align:right">Stock</th><th></th>
+      </tr></thead><tbody id="w-var-tbody"></tbody></table>
+      <div class="hint">El atributo y valor se usan en ML (Color/Talle) y TN. Destildá las variantes que no quieras publicar.</div>
+    </div>
+
+    <div class="w-section">
+      <h3>Descripción estilo Muvin</h3>
+      <div class="w-row">
+        <div style="flex:3">
+          <label>Datos extra para la IA (specs, materiales, medidas — opcional)</label>
+          <input type="text" id="w-datos" placeholder="ej: acero endurecido 13 mm, incluye 2 llaves, soporte de cuadro">
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn btn-green" id="btn-describir" onclick="generarDescripcion()">✨ Generar estilo Muvin</button>
+        </div>
+      </div>
+      <textarea id="w-desc" placeholder="La descripción aparece acá. Podés editarla antes de publicar."></textarea>
+      <div class="hint" id="w-desc-hint"></div>
+    </div>
+
+    <div class="w-section">
+      <h3>Fotos (aprobación manual)</h3>
+      <div class="w-row" style="align-items:flex-end">
+        <div style="flex:2">
+          <label>Buscar candidatas</label>
+          <div style="display:flex;gap:6px">
+            <a class="btn btn-sm" id="ps-google" target="_blank" rel="noopener">Google Imágenes</a>
+            <a class="btn btn-sm" id="ps-bing" target="_blank" rel="noopener">Bing</a>
+            <a class="btn btn-sm" id="ps-ddg" target="_blank" rel="noopener">DuckDuckGo</a>
+          </div>
+        </div>
+        <div style="flex:3">
+          <label>Pegar URL de imagen (jpg/png, pública)</label>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="w-foto-url" placeholder="https://...">
+            <button class="btn btn-sm" onclick="agregarFoto()">Agregar</button>
+          </div>
+        </div>
+      </div>
+      <div class="fotos-grid" id="w-fotos"></div>
+      <div class="hint">La primera foto es la principal. Revisá que correspondan al producto y que tengas derecho a usarlas (idealmente del fabricante).</div>
+    </div>
+
+    <div class="result-box" id="w-result"></div>
+
+    <div class="modal-footer">
+      <button class="btn" onclick="cerrarWizard()">Cerrar</button>
+      <button class="btn btn-primary" id="btn-pub-ml" onclick="publicarML()">Publicar en Mercado Libre</button>
+      <button class="btn btn-primary" id="btn-pub-tn" onclick="publicarTN()">Publicar en Tiendanube</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ------------------------------------------------------------ configuración
+const CFG_KEYS = {
+  'cfg-ml-token':'ml_token', 'cfg-ml-user':'ml_user_id', 'cfg-tn-store':'tn_store_id',
+  'cfg-tn-token':'tn_token', 'cfg-ai-key':'anthropic_key', 'cfg-sheet':'stock_sheet_id',
+};
+function loadCfg(){
+  for (const [id,key] of Object.entries(CFG_KEYS)){
+    document.getElementById(id).value = localStorage.getItem(key) || '';
+  }
+  if (!document.getElementById('cfg-ml-user').value) document.getElementById('cfg-ml-user').value = '246901020';
+}
+function saveCfg(show){
+  for (const [id,key] of Object.entries(CFG_KEYS)){
+    localStorage.setItem(key, document.getElementById(id).value.trim());
+  }
+  if (show){
+    const el = document.getElementById('cfg-status');
+    el.textContent = '✓ Guardado';
+    setTimeout(()=>el.textContent='', 2000);
+  }
+}
+function cfg(id){ return document.getElementById(id).value.trim(); }
+loadCfg();
+
+// Sufijos de variante Hansa -> valor legible
+const SUFIJOS = {
+  NGO:'Negro', NE:'Negro', NEG:'Negro', BCO:'Blanco', BLA:'Blanco', ROJ:'Rojo', RO:'Rojo',
+  AZL:'Azul', AZ:'Azul', VER:'Verde', VERD:'Verde', GRI:'Gris', GR:'Gris', MAR:'Marrón',
+  NAR:'Naranja', ROS:'Rosa', VIO:'Violeta', AMA:'Amarillo', CEL:'Celeste', PLAT:'Plateado',
+  FUC:'Fucsia', BEI:'Beige', MI:'Verde militar', CHA:'Charcoal', SAND:'Arena', MUTE:'Mute',
+  XS:'XS', S:'S', M:'M', L:'L', XL:'XL', LXL:'L/XL',
+};
+function sufijoAValor(suf){
+  if (!suf) return '';
+  return suf.split(/[./]/).map(p => SUFIJOS[p.toUpperCase()] || p).join(' / ');
+}
+function sufijoEsTalle(suf){
+  return /^(XS|S|M|L|XL|LXL|\d+)$/i.test((suf.split(/[./]/).pop()||''));
+}
+
+// ------------------------------------------------------------ análisis
+let STOCK = {}, ML = {}, TN = {}, ROWS = [];
+let tnDisponible = false;
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(()=>({error:'Respuesta inválida del servidor'}));
+  if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
+  return data;
+}
+function progress(msg){ document.getElementById('progress').textContent = msg; }
+
+async function analizar(){
+  saveCfg(false);
+  const mlToken = cfg('cfg-ml-token');
+  if (!mlToken){ alert('Cargá el token de Mercado Libre.'); return; }
+  const btn = document.getElementById('btn-analizar');
+  btn.disabled = true;
+  try {
+    progress('1/3 · Leyendo stock del ERP (planilla Hansa)...');
+    const sheetParam = cfg('cfg-sheet') ? ('?sheet_id='+encodeURIComponent(cfg('cfg-sheet'))) : '';
+    const stock = await api('/api/sync/stock'+sheetParam);
+    STOCK = stock.productos;
+    if (stock.warning) progress('⚠ '+stock.warning);
+
+    progress('2/3 · Leyendo publicaciones de Mercado Libre (puede tardar)...');
+    const ml = await api(`/api/sync/ml?token=${encodeURIComponent(mlToken)}&user_id=${encodeURIComponent(cfg('cfg-ml-user'))}`);
+    ML = ml.items_por_raiz;
+
+    tnDisponible = !!(cfg('cfg-tn-store') && cfg('cfg-tn-token'));
+    if (tnDisponible){
+      progress('3/3 · Leyendo productos de Tiendanube...');
+      const tn = await api(`/api/sync/tn?store_id=${encodeURIComponent(cfg('cfg-tn-store'))}&token=${encodeURIComponent(cfg('cfg-tn-token'))}`);
+      TN = tn.productos_por_raiz;
+    } else {
+      TN = {};
+      progress('Sin credenciales de Tiendanube: se compara solo contra Mercado Libre.');
+    }
+
+    ROWS = Object.values(STOCK).map(p => ({
+      ...p,
+      ml: ML[p.sku_raiz] || [],
+      tn: TN[p.sku_raiz] || [],
+    })).sort((a,b) => b.stock_total - a.stock_total);
+
+    document.getElementById('stats').style.display = '';
+    document.getElementById('filtros').style.display = '';
+    render();
+    if (!document.getElementById('progress').textContent.startsWith('⚠') && tnDisponible) progress('Análisis completo.');
+  } catch(e){
+    progress('❌ '+e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function render(){
+  const buscar = document.getElementById('f-buscar').value.toLowerCase();
+  const estado = document.getElementById('f-estado').value;
+  const soloStock = document.getElementById('f-stock').checked;
+
+  const conStock = ROWS.filter(r => r.stock_total > 0);
+  const faltaAlguna = conStock.filter(r => !r.ml.length || (tnDisponible && !r.tn.length));
+  const faltaAmbas  = conStock.filter(r => !r.ml.length && (!tnDisponible || !r.tn.length));
+  document.getElementById('st-erp').textContent  = conStock.length;
+  document.getElementById('st-ml').textContent   = conStock.filter(r=>r.ml.length).length;
+  document.getElementById('st-tn').textContent   = tnDisponible ? conStock.filter(r=>r.tn.length).length : '—';
+  document.getElementById('st-falta').textContent = faltaAlguna.length;
+  document.getElementById('st-ambas').textContent = faltaAmbas.length;
+
+  let rows = ROWS;
+  if (soloStock) rows = rows.filter(r => r.stock_total > 0);
+  if (buscar) rows = rows.filter(r =>
+    r.sku_raiz.toLowerCase().includes(buscar) || (r.nombre||'').toLowerCase().includes(buscar));
+  if (estado === 'falta')       rows = rows.filter(r => !r.ml.length || (tnDisponible && !r.tn.length));
+  if (estado === 'falta-ml')    rows = rows.filter(r => !r.ml.length);
+  if (estado === 'falta-tn')    rows = rows.filter(r => tnDisponible && !r.tn.length);
+  if (estado === 'falta-ambas') rows = rows.filter(r => !r.ml.length && (!tnDisponible || !r.tn.length));
+
+  const tbody = document.getElementById('tbody');
+  if (!rows.length){
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Sin resultados con estos filtros.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.slice(0, 500).map(r => {
+    const mlCell = r.ml.length
+      ? r.ml.map(i=>`<a class="link-ml" href="${i.permalink||'#'}" target="_blank" rel="noopener">✓ ${i.status==='paused'?'pausada':'activa'}</a>`).join('<br>')
+      : '<span class="badge badge-red">falta</span>';
+    const tnCell = !tnDisponible ? '<span class="badge badge-gray">sin config</span>'
+      : (r.tn.length
+        ? r.tn.map(p=>`<a class="link-tn" href="${p.url||'#'}" target="_blank" rel="noopener">✓ ${p.published?'visible':'oculto'}</a>`).join('<br>')
+        : '<span class="badge badge-red">falta</span>');
+    const falta = !r.ml.length || (tnDisponible && !r.tn.length);
+    return `<tr>
+      <td style="font-family:monospace">${r.sku_raiz}</td>
+      <td>${escapeHtml(r.nombre || '(sin descripción en ERP)')}</td>
+      <td style="text-align:right">${fmtStock(r.stock_total)}</td>
+      <td style="text-align:center">${r.tiene_variantes ? r.variantes.length : '–'}</td>
+      <td>${mlCell}</td>
+      <td>${tnCell}</td>
+      <td>${falta ? `<button class="btn btn-sm btn-primary" onclick="abrirWizard('${r.sku_raiz}')">Preparar</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+  if (rows.length > 500){
+    tbody.innerHTML += `<tr class="empty-row"><td colspan="7">Mostrando 500 de ${rows.length} — afiná la búsqueda.</td></tr>`;
+  }
+}
+function fmtStock(n){ return Number.isInteger(n) ? n : n.toFixed(2); }
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ------------------------------------------------------------ wizard
+let W = null; // producto en edición
+let FOTOS = [];
+
+async function abrirWizard(raiz){
+  W = ROWS.find(r => r.sku_raiz === raiz);
+  if (!W) return;
+  FOTOS = [];
+  document.getElementById('w-titulo-modal').textContent = 'Preparar publicación — ' + raiz;
+  document.getElementById('w-sub').textContent = W.nombre || '';
+  document.getElementById('w-precio').value = '';
+  document.getElementById('w-cantidad').value = Math.max(0, Math.floor(W.stock_total));
+  document.getElementById('w-desc').value = '';
+  document.getElementById('w-desc-hint').textContent = '';
+  document.getElementById('w-datos').value = '';
+  document.getElementById('w-foto-url').value = '';
+  document.getElementById('w-result').className = 'result-box';
+  document.getElementById('w-result').textContent = '';
+  document.getElementById('w-categoria').innerHTML = '<option value="">(sin predecir)</option>';
+  renderFotos();
+
+  // Variantes
+  const varSection = document.getElementById('w-var-section');
+  const conVariantes = W.tiene_variantes && W.variantes.filter(v=>v.sufijo).length > 0;
+  varSection.style.display = conVariantes ? '' : 'none';
+  if (conVariantes){
+    document.getElementById('w-var-tbody').innerHTML = W.variantes.filter(v=>v.sufijo).map((v,i)=>`
+      <tr>
+        <td style="font-family:monospace">${v.sku}</td>
+        <td style="font-family:monospace">${v.sufijo}</td>
+        <td><select id="va-${i}">
+          <option value="Color"${sufijoEsTalle(v.sufijo)?'':' selected'}>Color</option>
+          <option value="Talle"${sufijoEsTalle(v.sufijo)?' selected':''}>Talle</option>
+        </select></td>
+        <td><input type="text" id="vv-${i}" value="${escapeHtml(sufijoAValor(v.sufijo))}"></td>
+        <td style="text-align:right">${fmtStock(v.stock)}</td>
+        <td><input type="checkbox" id="vi-${i}"${v.stock>0?' checked':''}></td>
+      </tr>`).join('');
+  }
+
+  document.getElementById('wizard-bg').classList.add('open');
+
+  // Borrador: título + links de búsqueda de fotos
+  try {
+    const d = await api('/api/sync/draft', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({nombre: W.nombre, sku_raiz: raiz})});
+    document.getElementById('w-titulo').value = d.titulo;
+    tituloCount();
+    document.getElementById('ps-google').href = d.photo_search.google;
+    document.getElementById('ps-bing').href = d.photo_search.bing;
+    document.getElementById('ps-ddg').href = d.photo_search.duckduckgo;
+    predecirCategoria();
+  } catch(e){ /* el usuario puede completar a mano */ }
+}
+function cerrarWizard(){ document.getElementById('wizard-bg').classList.remove('open'); }
+function tituloCount(){
+  const t = document.getElementById('w-titulo').value;
+  document.getElementById('w-titulo-count').textContent = `(${t.length}/60)`;
+}
+
+async function predecirCategoria(){
+  const t = document.getElementById('w-titulo').value || (W && W.nombre) || '';
+  if (!t) return;
+  try {
+    const d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(t)}`);
+    const sel = document.getElementById('w-categoria');
+    if (d.predicciones.length){
+      sel.innerHTML = d.predicciones.map(p =>
+        `<option value="${p.category_id}">${escapeHtml(p.category_name || p.domain_name || p.category_id)} (${p.category_id})</option>`).join('');
+    } else {
+      sel.innerHTML = '<option value="">Sin predicción — revisar manualmente</option>';
+    }
+  } catch(e){ /* silencioso */ }
+}
+
+async function generarDescripcion(){
+  const btn = document.getElementById('btn-describir');
+  btn.disabled = true; btn.textContent = 'Generando...';
+  try {
+    const d = await api('/api/sync/describe', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        nombre: W.nombre,
+        titulo: document.getElementById('w-titulo').value,
+        datos: document.getElementById('w-datos').value,
+        api_key: cfg('cfg-ai-key'),
+      })});
+    document.getElementById('w-desc').value = d.texto;
+    document.getElementById('w-desc-hint').textContent = d.generado_con_ia
+      ? 'Generada con IA — revisala y editala antes de publicar.'
+      : (d.warning || 'Plantilla básica.');
+  } catch(e){
+    document.getElementById('w-desc-hint').textContent = '❌ '+e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Generar estilo Muvin';
+  }
+}
+
+// Fotos
+function agregarFoto(){
+  const url = document.getElementById('w-foto-url').value.trim();
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url)){ alert('Tiene que ser una URL http(s).'); return; }
+  FOTOS.push(url);
+  document.getElementById('w-foto-url').value = '';
+  renderFotos();
+}
+function quitarFoto(i){ FOTOS.splice(i,1); renderFotos(); }
+function renderFotos(){
+  document.getElementById('w-fotos').innerHTML = FOTOS.map((u,i)=>`
+    <div class="foto">
+      <img src="${escapeHtml(u)}" onerror="this.style.opacity=.2" alt="">
+      <button class="del" onclick="quitarFoto(${i})">×</button>
+      ${i===0?'<div class="ppal">principal</div>':''}
+    </div>`).join('');
+}
+
+// Variantes seleccionadas del wizard
+function variantesSeleccionadas(){
+  if (document.getElementById('w-var-section').style.display === 'none') return [];
+  if (!document.getElementById('w-var-usar').checked) return [];
+  const vars = W.variantes.filter(v=>v.sufijo);
+  return vars.map((v,i)=>({
+    ...v,
+    atributo: document.getElementById('va-'+i).value,
+    valor: document.getElementById('vv-'+i).value.trim(),
+    incluir: document.getElementById('vi-'+i).checked,
+  })).filter(v => v.incluir && v.valor);
+}
+
+function validarComun(){
+  const titulo = document.getElementById('w-titulo').value.trim();
+  const precio = parseFloat(document.getElementById('w-precio').value);
+  if (!titulo) return 'Falta el título.';
+  if (!precio || precio <= 0) return 'Falta el precio.';
+  if (!FOTOS.length) return 'Agregá al menos una foto aprobada.';
+  if (!document.getElementById('w-desc').value.trim()) return 'Falta la descripción (podés generarla con el botón).';
+  return null;
+}
+function mostrarResultado(ok, msg){
+  const el = document.getElementById('w-result');
+  el.className = 'result-box ' + (ok ? 'result-ok' : 'result-err');
+  el.innerHTML = msg;
+}
+
+// Publicar en Mercado Libre
+async function publicarML(){
+  const err = validarComun();
+  if (err){ mostrarResultado(false, err); return; }
+  const catId = document.getElementById('w-categoria').value;
+  if (!catId){ mostrarResultado(false, 'Falta la categoría de ML (usá “Predecir” o cargala).'); return; }
+  const precio = parseFloat(document.getElementById('w-precio').value);
+  const vars = variantesSeleccionadas();
+
+  const item = {
+    title: document.getElementById('w-titulo').value.trim(),
+    category_id: catId,
+    price: precio,
+    currency_id: 'ARS',
+    buying_mode: 'buy_it_now',
+    condition: 'new',
+    listing_type_id: document.getElementById('w-listing').value,
+    pictures: FOTOS.map(u=>({source:u})),
+  };
+  if (vars.length){
+    item.variations = vars.map(v=>({
+      price: precio,
+      available_quantity: Math.max(0, Math.floor(v.stock)),
+      seller_custom_field: v.sku,
+      attribute_combinations: [
+        v.atributo === 'Color' ? {id:'COLOR', value_name:v.valor}
+                               : {id:'SIZE',  value_name:v.valor}
+      ],
+      picture_ids: FOTOS,
+    }));
+  } else {
+    item.available_quantity = parseInt(document.getElementById('w-cantidad').value) || 0;
+    item.attributes = [{id:'SELLER_SKU', value_name: W.sku_raiz}];
+  }
+
+  const btn = document.getElementById('btn-pub-ml');
+  btn.disabled = true; btn.textContent = 'Publicando...';
+  try {
+    const d = await api('/api/sync/publish/ml', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token: cfg('cfg-ml-token'), item, descripcion: document.getElementById('w-desc').value})});
+    let msg = `✓ Publicado en Mercado Libre: <a href="${d.permalink}" target="_blank" rel="noopener">${d.id}</a>`;
+    if (d.warning) msg += `<br>⚠ ${escapeHtml(d.warning)}`;
+    mostrarResultado(true, msg);
+    W.ml.push({id:d.id, permalink:d.permalink, status:'active', title:item.title});
+    render();
+  } catch(e){
+    mostrarResultado(false, 'Mercado Libre: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Publicar en Mercado Libre';
+  }
+}
+
+// Publicar en Tiendanube
+function textoAHtml(texto){
+  const out = []; let bullets = [];
+  for (const linea of texto.split('\n')){
+    const s = linea.trim();
+    if (s.startsWith('- ')){ bullets.push('<li>'+escapeHtml(s.slice(2))+'</li>'); continue; }
+    if (bullets.length){ out.push('<ul>'+bullets.join('')+'</ul>'); bullets = []; }
+    if (s) out.push('<p>'+escapeHtml(s)+'</p>');
+  }
+  if (bullets.length) out.push('<ul>'+bullets.join('')+'</ul>');
+  return out.join('');
+}
+
+async function publicarTN(){
+  if (!cfg('cfg-tn-store') || !cfg('cfg-tn-token')){
+    mostrarResultado(false, 'Faltan las credenciales de Tiendanube en Configuración.'); return;
+  }
+  const err = validarComun();
+  if (err){ mostrarResultado(false, err); return; }
+  const precio = parseFloat(document.getElementById('w-precio').value);
+  const vars = variantesSeleccionadas();
+
+  const product = {
+    name: {es: document.getElementById('w-titulo').value.trim()},
+    description: {es: textoAHtml(document.getElementById('w-desc').value)},
+    images: FOTOS.map(u=>({src:u})),
+    published: document.getElementById('w-tn-pub').value === 'true',
+  };
+  if (vars.length){
+    const attrs = [...new Set(vars.map(v=>v.atributo))];
+    product.attributes = attrs.map(a=>({es:a}));
+    product.variants = vars.map(v=>({
+      price: String(precio),
+      stock: Math.max(0, Math.floor(v.stock)),
+      sku: v.sku,
+      values: attrs.map(a => ({es: v.atributo === a ? v.valor : '-'})),
+    }));
+  } else {
+    product.variants = [{
+      price: String(precio),
+      stock: parseInt(document.getElementById('w-cantidad').value) || 0,
+      sku: W.sku_raiz,
+    }];
+  }
+
+  const btn = document.getElementById('btn-pub-tn');
+  btn.disabled = true; btn.textContent = 'Publicando...';
+  try {
+    const d = await api('/api/sync/publish/tn', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({store_id: cfg('cfg-tn-store'), token: cfg('cfg-tn-token'), product})});
+    const link = d.url ? `<a href="${d.url}" target="_blank" rel="noopener">${d.id}</a>` : d.id;
+    mostrarResultado(true, `✓ Publicado en Tiendanube: ${link}`);
+    W.tn.push({id:d.id, url:d.url, published: product.published, name: product.name.es});
+    render();
+  } catch(e){
+    mostrarResultado(false, 'Tiendanube: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Publicar en Tiendanube';
+  }
+}
+
+document.getElementById('wizard-bg').addEventListener('click', e => {
+  if (e.target === e.currentTarget) cerrarWizard();
+});
+</script>
+</body>
+</html>
