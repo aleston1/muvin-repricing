@@ -8,6 +8,9 @@ import io
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 
+from sync import sync_bp
+app.register_blueprint(sync_bp)
+
 TOKEN   = os.environ.get("ML_TOKEN", "")
 USER_ID = os.environ.get("ML_USER_ID", "246901020")
 BASE    = "https://api.mercadolibre.com"
@@ -45,6 +48,10 @@ def get_sku_raiz(item):
 @app.route("/")
 def index():
     return app.send_static_file("index.html")
+
+@app.route("/sync")
+def sync_page():
+    return app.send_static_file("sync.html")
 
 @app.route("/api/items")
 def get_items():
