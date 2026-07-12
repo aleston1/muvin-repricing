@@ -240,6 +240,37 @@ def get_ml():
         return jsonify({"error": str(e)}), 500
 
 
+@sync_bp.route("/ml/token", methods=["POST"])
+def ml_token():
+    """Canjea el code de OAuth (o un refresh_token) por un access token de ML."""
+    body   = request.json or {}
+    app_id = body.get("app_id", "").strip()
+    secret = body.get("secret", "").strip()
+    if not app_id or not secret:
+        return jsonify({"error": "Faltan App ID o Client Secret de Mercado Libre"}), 400
+    payload = {"client_id": app_id, "client_secret": secret}
+    if body.get("code"):
+        payload.update({"grant_type": "authorization_code", "code": body["code"],
+                        "redirect_uri": body.get("redirect_uri", "")})
+    elif body.get("refresh_token"):
+        payload.update({"grant_type": "refresh_token", "refresh_token": body["refresh_token"]})
+    else:
+        return jsonify({"error": "Falta el code o el refresh_token"}), 400
+    r = requests.post(ML_BASE + "/oauth/token", data=payload,
+                      headers={"Accept": "application/json"}, timeout=20)
+    if r.status_code != 200:
+        try:
+            detail = r.json()
+        except ValueError:
+            detail = r.text[:300]
+        return jsonify({"error": "Mercado Libre rechazó la autorización", "detalle": detail}), 502
+    d = r.json()
+    return jsonify({"access_token": d.get("access_token"),
+                    "refresh_token": d.get("refresh_token"),
+                    "expires_in": d.get("expires_in"),
+                    "user_id": d.get("user_id")})
+
+
 @sync_bp.route("/ml/categoria")
 def ml_categoria():
     """Predicción de categoría de ML para un título."""

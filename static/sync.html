@@ -93,7 +93,9 @@
   <div class="config-card">
     <h2>Configuración <span style="font-weight:400;text-transform:none;letter-spacing:0">(se guarda en este navegador)</span></h2>
     <div class="grid-cfg">
-      <div><label>Token Mercado Libre</label><input id="cfg-ml-token" type="password" placeholder="APP_USR-..."></div>
+      <div><label>App ID Mercado Libre (Client ID)</label><input id="cfg-ml-app" placeholder="4054832585588357"></div>
+      <div><label>Client Secret Mercado Libre</label><input id="cfg-ml-secret" type="password" placeholder="secret de la app"></div>
+      <div><label>Token Mercado Libre <span style="color:#aaa">(se completa solo al conectar)</span></label><input id="cfg-ml-token" type="password" placeholder="APP_USR-..."></div>
       <div><label>User ID Mercado Libre</label><input id="cfg-ml-user" placeholder="246901020"></div>
       <div><label>Store ID Tiendanube</label><input id="cfg-tn-store" placeholder="123456"></div>
       <div><label>Token Tiendanube</label><input id="cfg-tn-token" type="password" placeholder="access token"></div>
@@ -101,7 +103,9 @@
       <div><label>ID planilla de stock (Google Sheets)</label><input id="cfg-sheet" placeholder="ID de la planilla"></div>
     </div>
     <button class="btn btn-sm" onclick="saveCfg(true)">Guardar configuración</button>
+    <button class="btn btn-sm btn-green" onclick="conectarML()">🔗 Conectar con Mercado Libre</button>
     <span id="cfg-status" style="font-size:12px;color:#1e7e34;margin-left:8px"></span>
+    <span id="ml-status" class="badge badge-gray" style="margin-left:4px"></span>
   </div>
 
   <div class="progress-label" id="progress"></div>
@@ -242,6 +246,7 @@
 <script>
 // ------------------------------------------------------------ configuración
 const CFG_KEYS = {
+  'cfg-ml-app':'ml_app_id', 'cfg-ml-secret':'ml_app_secret',
   'cfg-ml-token':'ml_token', 'cfg-ml-user':'ml_user_id', 'cfg-tn-store':'tn_store_id',
   'cfg-tn-token':'tn_token', 'cfg-ai-key':'anthropic_key', 'cfg-sheet':'stock_sheet_id',
 };
@@ -263,6 +268,56 @@ function saveCfg(show){
 }
 function cfg(id){ return document.getElementById(id).value.trim(); }
 loadCfg();
+
+// ---------------------------------------------- conexión OAuth con Mercado Libre
+function mlStatus(){
+  const el = document.getElementById('ml-status');
+  const exp = parseInt(localStorage.getItem('ml_token_exp') || '0');
+  if (!cfg('cfg-ml-token')){ el.textContent = 'ML: sin conectar'; el.className = 'badge badge-gray'; return; }
+  if (exp && Date.now() > exp){ el.textContent = 'ML: token vencido'; el.className = 'badge badge-amber'; return; }
+  el.textContent = 'ML: conectado'; el.className = 'badge badge-green';
+}
+function conectarML(){
+  saveCfg(false);
+  const appId = cfg('cfg-ml-app');
+  if (!appId){ alert('Cargá primero el App ID de Mercado Libre (Client ID de tu app en el DevCenter).'); return; }
+  const redirect = location.origin + '/sync';
+  location.href = 'https://auth.mercadolibre.com.ar/authorization?response_type=code'
+    + '&client_id=' + encodeURIComponent(appId)
+    + '&redirect_uri=' + encodeURIComponent(redirect);
+}
+async function canjearToken(body){
+  const d = await api('/api/sync/ml/token', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({app_id: cfg('cfg-ml-app'), secret: cfg('cfg-ml-secret'), ...body})});
+  document.getElementById('cfg-ml-token').value = d.access_token;
+  if (d.user_id) document.getElementById('cfg-ml-user').value = d.user_id;
+  localStorage.setItem('ml_refresh_token', d.refresh_token || '');
+  localStorage.setItem('ml_token_exp', String(Date.now() + (d.expires_in || 21600) * 1000));
+  saveCfg(false);
+  mlStatus();
+}
+async function procesarCodeOAuth(){
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if (!code) return;
+  history.replaceState(null, '', '/sync');  // limpia el ?code=... de la URL
+  try {
+    await canjearToken({code, redirect_uri: location.origin + '/sync'});
+    progress('✓ Conectado con Mercado Libre. Ya podés analizar el catálogo.');
+  } catch(e){
+    progress('❌ No se pudo conectar con Mercado Libre: ' + e.message);
+  }
+}
+async function refrescarTokenSiHaceFalta(){
+  const exp = parseInt(localStorage.getItem('ml_token_exp') || '0');
+  const refresh = localStorage.getItem('ml_refresh_token') || '';
+  // Renueva si vence en menos de 30 minutos y tenemos con qué
+  if (refresh && cfg('cfg-ml-app') && cfg('cfg-ml-secret') && exp && Date.now() > exp - 30*60*1000){
+    try { await canjearToken({refresh_token: refresh}); } catch(e){ /* se intenta con el token actual */ }
+  }
+}
+procesarCodeOAuth();
+mlStatus();
 
 // Sufijos de variante Hansa -> valor legible
 const SUFIJOS = {
@@ -294,8 +349,9 @@ function progress(msg){ document.getElementById('progress').textContent = msg; }
 
 async function analizar(){
   saveCfg(false);
+  await refrescarTokenSiHaceFalta();
   const mlToken = cfg('cfg-ml-token');
-  if (!mlToken){ alert('Cargá el token de Mercado Libre.'); return; }
+  if (!mlToken){ alert('Conectá con Mercado Libre primero (botón 🔗 en Configuración).'); return; }
   const btn = document.getElementById('btn-analizar');
   btn.disabled = true;
   try {
