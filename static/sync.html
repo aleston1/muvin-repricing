@@ -63,6 +63,9 @@
   .foto img{width:100%;height:100%;object-fit:cover}
   .foto .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:1}
   .foto .ppal{position:absolute;bottom:0;left:0;right:0;background:rgba(26,26,26,.75);color:#fff;font-size:10px;text-align:center;padding:1px 0}
+  .foto-cand{cursor:pointer;border:2px solid transparent;transition:border-color .1s}
+  .foto-cand:hover{border-color:#1a1a1a}
+  .foto-cand.usada{opacity:.35;cursor:default}
   .hint{font-size:11px;color:#999;margin-top:4px}
   .result-box{font-size:13px;padding:10px 12px;border-radius:8px;margin-top:10px;display:none;word-break:break-word}
   .result-ok{display:block;background:#e6f4ea;color:#1e7e34}
@@ -216,9 +219,15 @@
 
     <div class="w-section">
       <h3>Fotos (aprobación manual)</h3>
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;color:#666">Candidatas encontradas en Mercado Libre — hacé clic en las que quieras usar
+          <button class="btn btn-sm" style="padding:2px 8px;margin-left:6px" onclick="cargarFotosCandidatas()">↻ Buscar de nuevo</button>
+        </label>
+        <div class="fotos-grid" id="w-fotos-cand"><span class="hint">Buscando candidatas…</span></div>
+      </div>
       <div class="w-row" style="align-items:flex-end">
         <div style="flex:2">
-          <label>Buscar candidatas</label>
+          <label>¿No encontraste? Buscá en la web</label>
           <div style="display:flex;gap:6px">
             <a class="btn btn-sm" id="ps-google" target="_blank" rel="noopener">Google Imágenes</a>
             <a class="btn btn-sm" id="ps-bing" target="_blank" rel="noopener">Bing</a>
@@ -495,7 +504,7 @@ async function abrirWizard(raiz){
   FOTOS = [];
   document.getElementById('w-titulo-modal').textContent = 'Preparar publicación — ' + raiz;
   document.getElementById('w-sub').textContent = W.nombre || '';
-  document.getElementById('w-precio').value = '';
+  document.getElementById('w-precio').value = '10000000';
   document.getElementById('w-cantidad').value = Math.max(0, Math.floor(W.stock_total));
   document.getElementById('w-desc').value = '';
   document.getElementById('w-desc-hint').textContent = '';
@@ -537,7 +546,42 @@ async function abrirWizard(raiz){
     document.getElementById('ps-bing').href = d.photo_search.bing;
     document.getElementById('ps-ddg').href = d.photo_search.duckduckgo;
     predecirCategoria();
+    cargarFotosCandidatas();
   } catch(e){ /* el usuario puede completar a mano */ }
+}
+
+let CANDIDATAS = [];
+async function cargarFotosCandidatas(){
+  const cont = document.getElementById('w-fotos-cand');
+  cont.innerHTML = '<span class="hint">Buscando candidatas en Mercado Libre…</span>';
+  const q = document.getElementById('w-titulo').value || (W && W.nombre) || '';
+  try {
+    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(q)}`);
+    CANDIDATAS = d.fotos || [];
+    if (!CANDIDATAS.length){
+      cont.innerHTML = '<span class="hint">No se encontraron candidatas — usá los buscadores de abajo o pegá una URL.</span>';
+      return;
+    }
+    renderCandidatas();
+  } catch(e){
+    cont.innerHTML = '<span class="hint">No se pudieron buscar candidatas ('+escapeHtml(e.message)+').</span>';
+  }
+}
+function renderCandidatas(){
+  const cont = document.getElementById('w-fotos-cand');
+  cont.innerHTML = CANDIDATAS.map((f,i)=>{
+    const usada = FOTOS.includes(f.url);
+    return `<div class="foto foto-cand${usada?' usada':''}" title="${escapeHtml(f.fuente)}" onclick="usarCandidata(${i})">
+      <img src="${escapeHtml(f.url)}" onerror="this.parentElement.style.display='none'" alt="">
+    </div>`;
+  }).join('');
+}
+function usarCandidata(i){
+  const f = CANDIDATAS[i];
+  if (!f || FOTOS.includes(f.url)) return;
+  FOTOS.push(f.url);
+  renderFotos();
+  renderCandidatas();
 }
 function cerrarWizard(){ document.getElementById('wizard-bg').classList.remove('open'); }
 function tituloCount(){
@@ -591,7 +635,7 @@ function agregarFoto(){
   document.getElementById('w-foto-url').value = '';
   renderFotos();
 }
-function quitarFoto(i){ FOTOS.splice(i,1); renderFotos(); }
+function quitarFoto(i){ FOTOS.splice(i,1); renderFotos(); renderCandidatas(); }
 function renderFotos(){
   document.getElementById('w-fotos').innerHTML = FOTOS.map((u,i)=>`
     <div class="foto">

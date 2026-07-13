@@ -292,6 +292,51 @@ def ml_categoria():
         return jsonify({"predicciones": [], "error": str(e)})
 
 
+@sync_bp.route("/fotos")
+def buscar_fotos():
+    """Candidatas de fotos: catálogo oficial de ML + publicaciones existentes
+    del mismo producto. El humano elige cuáles usar en el wizard."""
+    token = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    q     = request.args.get("q", "")
+    if not q:
+        return jsonify({"error": "Falta q"}), 400
+    fotos, vistos = [], set()
+    try:
+        data    = ml_get("/sites/MLA/search", token, {"q": q, "limit": 6})
+        results = data.get("results", [])
+        # Primero las fotos del catálogo oficial de ML (las más seguras de usar)
+        for r in results:
+            cpid = r.get("catalog_product_id")
+            if not cpid or cpid in vistos:
+                continue
+            vistos.add(cpid)
+            try:
+                prod = ml_get(f"/products/{cpid}", token)
+                for p in (prod.get("pictures") or [])[:4]:
+                    u = p.get("url")
+                    if u and u not in vistos:
+                        vistos.add(u)
+                        fotos.append({"url": u, "fuente": "Catálogo ML — " + (prod.get("name") or "")})
+            except Exception:
+                pass
+        # Después las de publicaciones existentes
+        ids = [r["id"] for r in results if r.get("id")][:6]
+        if ids:
+            details = ml_get("/items", token, {"ids": ",".join(ids), "attributes": "id,title,pictures"})
+            for x in details:
+                if x.get("code") != 200:
+                    continue
+                it = x["body"]
+                for p in (it.get("pictures") or [])[:3]:
+                    u = p.get("secure_url") or p.get("url")
+                    if u and u not in vistos:
+                        vistos.add(u)
+                        fotos.append({"url": u, "fuente": it.get("title") or ""})
+        return jsonify({"fotos": fotos[:16]})
+    except Exception as e:
+        return jsonify({"fotos": [], "error": str(e)})
+
+
 @sync_bp.route("/publish/ml", methods=["POST"])
 def publish_ml():
     body  = request.json or {}
