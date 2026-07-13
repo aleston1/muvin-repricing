@@ -256,8 +256,11 @@ def ml_token():
         payload.update({"grant_type": "refresh_token", "refresh_token": body["refresh_token"]})
     else:
         return jsonify({"error": "Falta el code o el refresh_token"}), 400
-    r = requests.post(ML_BASE + "/oauth/token", data=payload,
-                      headers={"Accept": "application/json"}, timeout=20)
+    try:
+        r = requests.post(ML_BASE + "/oauth/token", data=payload,
+                          headers={"Accept": "application/json"}, timeout=20)
+    except requests.RequestException as e:
+        return jsonify({"error": f"No se pudo contactar a Mercado Libre: {e}"}), 502
     if r.status_code != 200:
         try:
             detail = r.json()
@@ -297,7 +300,10 @@ def publish_ml():
     descripcion = body.get("descripcion", "")
     if not token or not item:
         return jsonify({"error": "Faltan token o item"}), 400
-    r = ml_post("/items", token, item)
+    try:
+        r = ml_post("/items", token, item)
+    except requests.RequestException as e:
+        return jsonify({"error": f"No se pudo contactar a Mercado Libre: {e}"}), 502
     if r.status_code not in (200, 201):
         try:
             detail = r.json()
@@ -326,10 +332,13 @@ def tn_token():
     code   = body.get("code", "").strip()
     if not app_id or not secret or not code:
         return jsonify({"error": "Faltan App ID, Client Secret o code de Tiendanube"}), 400
-    r = requests.post("https://www.tiendanube.com/apps/authorize/token",
-                      data={"client_id": app_id, "client_secret": secret,
-                            "grant_type": "authorization_code", "code": code},
-                      headers={"Accept": "application/json"}, timeout=20)
+    try:
+        r = requests.post("https://www.tiendanube.com/apps/authorize/token",
+                          data={"client_id": app_id, "client_secret": secret,
+                                "grant_type": "authorization_code", "code": code},
+                          headers={"Accept": "application/json"}, timeout=20)
+    except requests.RequestException as e:
+        return jsonify({"error": f"No se pudo contactar a Tiendanube: {e}"}), 502
     try:
         d = r.json()
     except ValueError:
@@ -391,8 +400,11 @@ def publish_tn():
     product  = body.get("product")
     if not store_id or not token or not product:
         return jsonify({"error": "Faltan store_id, token o product"}), 400
-    r = requests.post(f"{TN_BASE}/{store_id}/products",
-                      headers=tn_headers(token), json=product, timeout=30)
+    try:
+        r = requests.post(f"{TN_BASE}/{store_id}/products",
+                          headers=tn_headers(token), json=product, timeout=30)
+    except requests.RequestException as e:
+        return jsonify({"error": f"No se pudo contactar a Tiendanube: {e}"}), 502
     if r.status_code not in (200, 201):
         try:
             detail = r.json()
