@@ -23,6 +23,11 @@ TN_UA     = os.environ.get("TN_USER_AGENT", "MuvinSync (aleston@muvin.com.ar)")
 SHEET_ID  = os.environ.get("STOCK_SHEET_ID", "1ReMzkvfBbPYNmIcJLGQaCivvsf2-IZ2CadtRlcUgkZE")
 SHEET_GID = os.environ.get("STOCK_SHEET_GID", "1134850759")
 
+# Planilla "Productos pendientes de publicar": equivalencias de variantes,
+# categorías de Tiendanube, marcas y URLs del fabricante.
+EQUIV_SHEET_ID   = os.environ.get("EQUIV_SHEET_ID", "1eFOSU_uXME4AzqZs_-hJkB16xtEY82qiPO5KO2uCXRo")
+EQUIV_CACHE_PATH = os.path.join(os.path.dirname(__file__), "equiv_cache.json")
+
 # Cache en disco del último stock parseado (Heroku lo pierde al reiniciar,
 # igual que costos.json — la fuente de verdad sigue siendo la planilla).
 STOCK_CACHE_PATH = os.path.join(os.path.dirname(__file__), "stock_cache.json")
@@ -47,6 +52,57 @@ def sku_raiz(sku):
     if not sku:
         return None
     return str(sku).strip().split(".")[0].upper() or None
+
+
+def gtins_de_item_ml(item):
+    """Códigos de barras (GTIN/EAN) del item y sus variaciones, para cruzar
+    con el ERP cuando la publicación no tiene SKU cargado."""
+    gtins = set()
+    for a in item.get("attributes") or []:
+        if a.get("id") in ("GTIN", "EAN") and a.get("value_name"):
+            gtins.add(str(a["value_name"]).strip())
+    for v in item.get("variations") or []:
+        for a in v.get("attributes") or []:
+            if a.get("id") in ("GTIN", "EAN") and a.get("value_name"):
+                gtins.add(str(a["value_name"]).strip())
+        for a in v.get("attribute_combinations") or []:
+            if a.get("id") in ("GTIN", "EAN") and a.get("value_name"):
+                gtins.add(str(a["value_name"]).strip())
+    return gtins
+
+
+def ml_listar_ids(token, user_id, status):
+    """Todos los IDs de items del vendedor. Usa scan (sin tope) y cae a
+    paginación por offset (tope 1000) si scan no está disponible."""
+    ids, scroll, vueltas = [], None, 0
+    try:
+        while vueltas < 300:
+            vueltas += 1
+            params = {"status": status, "limit": 100, "search_type": "scan"}
+            if scroll:
+                params["scroll_id"] = scroll
+            data = ml_get(f"/users/{user_id}/items/search", token, params)
+            res = data.get("results", [])
+            if not res:
+                break
+            ids += res
+            scroll = data.get("scroll_id") or scroll
+            total = data.get("paging", {}).get("total", 0)
+            if total and len(ids) >= total:
+                break
+        return ids
+    except requests.HTTPError:
+        ids, offset = [], 0
+        while True:
+            data = ml_get(f"/users/{user_id}/items/search", token,
+                          {"status": status, "limit": 100, "offset": offset})
+            res = data.get("results", [])
+            ids += res
+            total = data.get("paging", {}).get("total", 0)
+            offset += 100
+            if not res or offset >= min(total, 1000):
+                break
+        return ids
 
 
 def skus_de_item_ml(item):
@@ -193,6 +249,107 @@ def upload_stock():
         return jsonify({"error": str(e)}), 500
 
 
+# ------------------------------------------------------ equivalencias Hansa
+
+# La planilla de equivalencias tiene celdas con mojibake (UTF-8 leído mal al
+# importar desde Hansa): '√±' es 'ñ', '√©' es 'é', etc. Se corrige al leer.
+_MOJIBAKE = {"√±": "ñ", "√ë": "Ñ", "√°": "á", "√©": "é", "√≠": "í",
+             "√≥": "ó", "√∫": "ú", "√º": "ü", "¬∞": "°"}
+
+
+def _celda(row, i):
+    if len(row) <= i or row[i] is None:
+        return ""
+    s = str(row[i]).strip()
+    for feo, bien in _MOJIBAKE.items():
+        if feo in s:
+            s = s.replace(feo, bien)
+    return s
+
+
+@sync_bp.route("/equivalencias")
+def equivalencias():
+    """Lee la planilla de equivalencias: variantes (código -> nombre y tipo),
+    categorías TN por tipo de producto, marca por SKU madre y URL del
+    fabricante (solapa SLUGS)."""
+    sheet_id = request.args.get("sheet_id", EQUIV_SHEET_ID)
+    try:
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+        r = requests.get(url, timeout=30, allow_redirects=True)
+        if r.status_code != 200 or "text/html" in r.headers.get("content-type", ""):
+            raise RuntimeError(
+                "No se pudo leer la planilla de equivalencias. Verificá que esté "
+                "compartida como 'Cualquier persona con el enlace: Lector'."
+            )
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(r.content), read_only=True, data_only=True)
+
+        def hoja(nombre):
+            for ws in wb.worksheets:
+                if ws.title.strip().lower() == nombre:
+                    return ws
+            return None
+
+        data = {"variantes": {}, "categorias_tn": {}, "marcas": {}, "slugs": {}}
+
+        ws = hoja("variantes")
+        if ws:
+            for row in list(ws.iter_rows(values_only=True))[1:]:
+                cod = _celda(row, 0)
+                if cod:
+                    data["variantes"][cod.upper()] = {
+                        "nombre": _celda(row, 1) or cod,
+                        "tipo": _celda(row, 2).upper() or "COLOR",
+                    }
+
+        ws = hoja("categorias tn")
+        if ws:
+            for row in list(ws.iter_rows(values_only=True))[1:]:
+                nombre = _celda(row, 1)
+                cats = []
+                for i in (2, 4, 6):
+                    cid = _celda(row, i)
+                    if cid:
+                        try:
+                            cats.append({"id": int(float(cid)), "nombre": _celda(row, i + 1)})
+                        except ValueError:
+                            pass
+                if nombre and cats:
+                    data["categorias_tn"][nombre.lower()] = cats
+                    cod = _celda(row, 0)
+                    if cod:
+                        data["categorias_tn"][cod.upper()] = cats
+
+        ws = hoja("publicar")
+        if ws:
+            for row in list(ws.iter_rows(values_only=True))[1:]:
+                sku_madre, marca = _celda(row, 1), _celda(row, 7)
+                if sku_madre and marca:
+                    data["marcas"][sku_madre.upper()] = marca
+
+        ws = hoja("slugs")
+        if ws:
+            for row in list(ws.iter_rows(values_only=True))[1:]:
+                sku, slug, base = _celda(row, 0), _celda(row, 2), _celda(row, 3)
+                if sku and base:
+                    full = base + slug if base.endswith("/") else (base.rstrip("/") + "/" + slug if slug else base)
+                    data["slugs"][sku.upper()] = {"url": full, "notas": _celda(row, 4)}
+
+        try:
+            with open(EQUIV_CACHE_PATH, "w") as f:
+                json.dump(data, f)
+        except OSError:
+            pass
+        return jsonify(data)
+    except Exception as e:
+        if os.path.exists(EQUIV_CACHE_PATH):
+            with open(EQUIV_CACHE_PATH) as f:
+                data = json.load(f)
+            data["warning"] = str(e)
+            return jsonify(data)
+        return jsonify({"error": str(e)}), 502
+
+
 # ------------------------------------------------------------- Mercado Libre
 
 @sync_bp.route("/ml")
@@ -204,16 +361,7 @@ def get_ml():
     try:
         ids = []
         for status in ("active", "paused"):
-            offset = 0
-            while True:
-                data = ml_get(f"/users/{user_id}/items/search", token,
-                              {"status": status, "limit": 100, "offset": offset})
-                res = data.get("results", [])
-                ids += res
-                total = data.get("paging", {}).get("total", 0)
-                offset += 100
-                if not res or offset >= min(total, 1000):
-                    break
+            ids += ml_listar_ids(token, user_id, status)
         items_por_raiz = {}
         sin_sku = []
         attrs = "id,title,status,permalink,price,available_quantity,thumbnail,seller_custom_field,attributes,variations"
@@ -226,7 +374,8 @@ def get_ml():
                 item = x["body"]
                 resumen = {"id": item.get("id"), "title": item.get("title"),
                            "status": item.get("status"), "permalink": item.get("permalink"),
-                           "price": item.get("price")}
+                           "price": item.get("price"),
+                           "gtins": sorted(gtins_de_item_ml(item))}
                 raices = {sku_raiz(s) for s in skus_de_item_ml(item)} - {None}
                 if not raices:
                     sin_sku.append(resumen)

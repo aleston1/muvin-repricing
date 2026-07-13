@@ -139,6 +139,8 @@
     </label>
   </div>
 
+  <div id="diag"></div>
+
   <div class="table-wrap">
     <table>
       <thead><tr>
@@ -165,9 +167,11 @@
           <label>Título <span id="w-titulo-count" style="color:#aaa"></span></label>
           <input type="text" id="w-titulo" maxlength="60" oninput="tituloCount()">
         </div>
+        <div><label>Marca</label><input type="text" id="w-marca" placeholder="ej: Kryptonite"></div>
         <div><label>Precio (ARS)</label><input type="number" id="w-precio" min="0" step="0.01"></div>
         <div><label>Cantidad</label><input type="number" id="w-cantidad" min="0" step="1"></div>
       </div>
+      <div class="hint" id="w-cats-tn"></div>
       <div class="w-row">
         <div style="flex:2">
           <label>Categoría ML <button class="btn btn-sm" style="padding:2px 8px" onclick="predecirCategoria()">↻ Predecir</button></label>
@@ -197,9 +201,9 @@
         </label>
       </h3>
       <table class="var-table"><thead><tr>
-        <th>SKU</th><th>Sufijo</th><th>Atributo</th><th>Valor</th><th style="text-align:right">Stock</th><th></th>
+        <th>SKU</th><th>Sufijo</th><th>Atributo 1</th><th>Valor 1</th><th>Atributo 2</th><th>Valor 2</th><th style="text-align:right">Stock</th><th></th>
       </tr></thead><tbody id="w-var-tbody"></tbody></table>
-      <div class="hint">El atributo y valor se usan en ML (Color/Talle) y TN. Destildá las variantes que no quieras publicar.</div>
+      <div class="hint">Precargado desde la planilla de equivalencias. El atributo 2 es opcional (ej: color + talle). Destildá las variantes que no quieras publicar.</div>
     </div>
 
     <div class="w-section">
@@ -228,7 +232,8 @@
       <div class="w-row" style="align-items:flex-end">
         <div style="flex:2">
           <label>¿No encontraste? Buscá en la web</label>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <a class="btn btn-sm" id="ps-fab" target="_blank" rel="noopener" style="display:none;background:#e6f4ea;border-color:#b7dfbf;color:#1e7e34">Página del fabricante</a>
             <a class="btn btn-sm" id="ps-google" target="_blank" rel="noopener">Google Imágenes</a>
             <a class="btn btn-sm" id="ps-bing" target="_blank" rel="noopener">Bing</a>
             <a class="btn btn-sm" id="ps-ddg" target="_blank" rel="noopener">DuckDuckGo</a>
@@ -375,16 +380,69 @@ const SUFIJOS = {
   FUC:'Fucsia', BEI:'Beige', MI:'Verde militar', CHA:'Charcoal', SAND:'Arena', MUTE:'Mute',
   XS:'XS', S:'S', M:'M', L:'L', XL:'XL', LXL:'L/XL',
 };
-function sufijoAValor(suf){
-  if (!suf) return '';
-  return suf.split(/[./]/).map(p => SUFIJOS[p.toUpperCase()] || p).join(' / ');
+// Equivalencias cargadas desde la planilla "Productos pendientes de publicar"
+let EQUIV = null;
+const TIPO_ATTR = {COLOR:'Color', TALLE:'Talle', TAM:'Tamaño', MODEL:'Modelo', SABOR:'Sabor'};
+const ATTR_OPTS = ['Color','Talle','Tamaño','Modelo','Sabor'];
+
+async function cargarEquivalencias(){
+  if (EQUIV) return;
+  try {
+    const d = await api('/api/sync/equivalencias');
+    EQUIV = d;
+    if (d.warning) progress('⚠ Equivalencias desde caché: ' + d.warning);
+  } catch(e){
+    EQUIV = {variantes:{}, categorias_tn:{}, marcas:{}, slugs:{}};
+    progress('⚠ No se pudo leer la planilla de equivalencias ('+e.message+') — se usan los valores por defecto.');
+  }
 }
-function sufijoEsTalle(suf){
-  return /^(XS|S|M|L|XL|LXL|\d+)$/i.test((suf.split(/[./]/).pop()||''));
+function equivParte(cod){
+  const c = (cod||'').toUpperCase();
+  if (EQUIV && EQUIV.variantes && EQUIV.variantes[c]){
+    const v = EQUIV.variantes[c];
+    return {atributo: TIPO_ATTR[v.tipo] || 'Color', valor: v.nombre};
+  }
+  if (SUFIJOS[c]) return {atributo: /^(XS|S|M|L|XL|LXL)$/i.test(c)?'Talle':'Color', valor: SUFIJOS[c]};
+  return null;
+}
+function partesSufijo(suf){
+  // "NGO.L" -> [{Color, Negro}, {Talle, L}] — cada tramo separado por punto
+  if (!suf) return [];
+  return suf.split('.').map(parte =>
+    equivParte(parte) ||
+    {atributo: /^(XS|S|M|L|XL|LXL|\d+)$/i.test(parte)?'Talle':'Color', valor: parte}
+  ).slice(0,2);
+}
+function selAttr(id, val, conVacio){
+  const opts = (conVacio?[''] : []).concat(ATTR_OPTS);
+  return `<select id="${id}">` + opts.map(o =>
+    `<option value="${o}"${o===val?' selected':''}>${o||'—'}</option>`).join('') + '</select>';
+}
+function sinAcentos(s){ return s.normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function categoriasTN(nombre){
+  if (!EQUIV || !EQUIV.categorias_tn) return [];
+  const seg = sinAcentos((nombre||'').split(' - ')[0].split(',')[0].trim().toLowerCase());
+  if (!seg) return [];
+  // Tolerar singular/plural y acentos: "candado" matchea "candados y accesorios"
+  const sing = s => s.replace(/es$/,'').replace(/s$/,'');
+  const objetivo = sing(seg);
+  const candidatas = Object.keys(EQUIV.categorias_tn)
+    .filter(k => k === k.toLowerCase())
+    .filter(k => {
+      const kn = sinAcentos(k);
+      return kn === seg || sing(kn.split(' ')[0]) === objetivo;
+    })
+    .sort((a,b) => {
+      // Las categorías de moto van últimas salvo que el producto sea de moto
+      const aMoto = a.includes('moto') && !seg.includes('moto') ? 1 : 0;
+      const bMoto = b.includes('moto') && !seg.includes('moto') ? 1 : 0;
+      return (aMoto - bMoto) || (a.length - b.length);
+    });
+  return candidatas.length ? EQUIV.categorias_tn[candidatas[0]] : [];
 }
 
 // ------------------------------------------------------------ análisis
-let STOCK = {}, ML = {}, TN = {}, ROWS = [];
+let STOCK = {}, ML = {}, TN = {}, ROWS = [], SIN_SKU = [];
 let tnDisponible = false;
 
 async function api(path, opts){
@@ -403,6 +461,10 @@ async function analizar(){
   const btn = document.getElementById('btn-analizar');
   btn.disabled = true;
   try {
+    if (!EQUIV){
+      progress('0/3 · Cargando planilla de equivalencias...');
+      await cargarEquivalencias();
+    }
     progress('1/3 · Leyendo stock del ERP (planilla Hansa)...');
     const sheetParam = cfg('cfg-sheet') ? ('?sheet_id='+encodeURIComponent(cfg('cfg-sheet'))) : '';
     const stock = await api('/api/sync/stock'+sheetParam);
@@ -412,6 +474,20 @@ async function analizar(){
     progress('2/3 · Leyendo publicaciones de Mercado Libre (puede tardar)...');
     const ml = await api(`/api/sync/ml?token=${encodeURIComponent(mlToken)}&user_id=${encodeURIComponent(cfg('cfg-ml-user'))}`);
     ML = ml.items_por_raiz;
+
+    // Rescate por código de barras: publicaciones sin SKU pero con GTIN que
+    // coincide con el código de barras del ERP
+    const porBarcode = {};
+    Object.values(STOCK).forEach(p => p.variantes.forEach(v => {
+      if (v.barcode) porBarcode[v.barcode] = p.sku_raiz;
+    }));
+    SIN_SKU = [];
+    (ml.sin_sku || []).forEach(item => {
+      const raiz = (item.gtins || []).map(g => porBarcode[g]).find(Boolean);
+      if (raiz) (ML[raiz] = ML[raiz] || []).push(item);
+      else SIN_SKU.push(item);
+    });
+    renderDiag();
 
     tnDisponible = !!(cfg('cfg-tn-store') && cfg('cfg-tn-token'));
     if (tnDisponible){
@@ -492,6 +568,17 @@ function render(){
   }
 }
 function fmtStock(n){ return Number.isInteger(n) ? n : n.toFixed(2); }
+function renderDiag(){
+  const el = document.getElementById('diag');
+  if (!SIN_SKU.length){ el.innerHTML = ''; return; }
+  el.innerHTML = `<details class="config-card" style="padding:10px 16px;margin-bottom:12px">
+    <summary style="cursor:pointer;font-size:13px;color:#856404">⚠ ${SIN_SKU.length} publicaciones de ML sin SKU ni código de barras cruzable — pueden figurar como "falta" aunque existan (clic para ver)</summary>
+    <div style="font-size:12px;color:#666;margin-top:8px;line-height:1.8">
+      Solución de fondo: agregales el SKU (código Hansa) en la publicación de ML y se van a cruzar solas en el próximo análisis.<br>` +
+    SIN_SKU.slice(0,80).map(i => `<a href="${i.permalink||'#'}" target="_blank" rel="noopener">${escapeHtml(i.title||i.id)}</a>`).join('<br>') +
+    (SIN_SKU.length > 80 ? `<br>… y ${SIN_SKU.length-80} más` : '') +
+    `</div></details>`;
+}
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // ------------------------------------------------------------ wizard
@@ -501,11 +588,25 @@ let FOTOS = [];
 async function abrirWizard(raiz){
   W = ROWS.find(r => r.sku_raiz === raiz);
   if (!W) return;
+  if (!EQUIV) await cargarEquivalencias();
   FOTOS = [];
   document.getElementById('w-titulo-modal').textContent = 'Preparar publicación — ' + raiz;
   document.getElementById('w-sub').textContent = W.nombre || '';
   document.getElementById('w-precio').value = '10000000';
   document.getElementById('w-cantidad').value = Math.max(0, Math.floor(W.stock_total));
+  document.getElementById('w-marca').value = (EQUIV && EQUIV.marcas && EQUIV.marcas[raiz]) || '';
+
+  // Categorías de Tiendanube según el tipo de producto (planilla de equivalencias)
+  W._catsTN = categoriasTN(W.nombre);
+  document.getElementById('w-cats-tn').textContent = W._catsTN.length
+    ? 'Categorías Tiendanube (automático): ' + W._catsTN.map(c=>c.nombre).join(' · ')
+    : 'Sin categoría de Tiendanube mapeada para este tipo de producto (se publica sin categoría).';
+
+  // Link a la página del fabricante si está en la solapa SLUGS
+  const fab = document.getElementById('ps-fab');
+  const slug = EQUIV && EQUIV.slugs && EQUIV.slugs[raiz];
+  if (slug && slug.url){ fab.href = slug.url; fab.style.display = ''; fab.title = slug.notas || ''; }
+  else fab.style.display = 'none';
   document.getElementById('w-desc').value = '';
   document.getElementById('w-desc-hint').textContent = '';
   document.getElementById('w-datos').value = '';
@@ -520,18 +621,21 @@ async function abrirWizard(raiz){
   const conVariantes = W.tiene_variantes && W.variantes.filter(v=>v.sufijo).length > 0;
   varSection.style.display = conVariantes ? '' : 'none';
   if (conVariantes){
-    document.getElementById('w-var-tbody').innerHTML = W.variantes.filter(v=>v.sufijo).map((v,i)=>`
-      <tr>
+    document.getElementById('w-var-tbody').innerHTML = W.variantes.filter(v=>v.sufijo).map((v,i)=>{
+      const partes = partesSufijo(v.sufijo);
+      const p1 = partes[0] || {atributo:'Color', valor:v.sufijo};
+      const p2 = partes[1] || {atributo:'', valor:''};
+      return `<tr>
         <td style="font-family:monospace">${v.sku}</td>
         <td style="font-family:monospace">${v.sufijo}</td>
-        <td><select id="va-${i}">
-          <option value="Color"${sufijoEsTalle(v.sufijo)?'':' selected'}>Color</option>
-          <option value="Talle"${sufijoEsTalle(v.sufijo)?' selected':''}>Talle</option>
-        </select></td>
-        <td><input type="text" id="vv-${i}" value="${escapeHtml(sufijoAValor(v.sufijo))}"></td>
+        <td>${selAttr('va1-'+i, p1.atributo, false)}</td>
+        <td><input type="text" id="vv1-${i}" value="${escapeHtml(p1.valor)}"></td>
+        <td>${selAttr('va2-'+i, p2.atributo, true)}</td>
+        <td><input type="text" id="vv2-${i}" value="${escapeHtml(p2.valor)}"></td>
         <td style="text-align:right">${fmtStock(v.stock)}</td>
         <td><input type="checkbox" id="vi-${i}"${v.stock>0?' checked':''}></td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
 
   document.getElementById('wizard-bg').classList.add('open');
@@ -612,7 +716,10 @@ async function generarDescripcion(){
       body: JSON.stringify({
         nombre: W.nombre,
         titulo: document.getElementById('w-titulo').value,
-        datos: document.getElementById('w-datos').value,
+        datos: [
+          document.getElementById('w-marca').value.trim() ? 'Marca: ' + document.getElementById('w-marca').value.trim() : '',
+          document.getElementById('w-datos').value,
+        ].filter(Boolean).join('\n'),
         api_key: cfg('cfg-ai-key'),
       })});
     document.getElementById('w-desc').value = d.texto;
@@ -652,10 +759,12 @@ function variantesSeleccionadas(){
   const vars = W.variantes.filter(v=>v.sufijo);
   return vars.map((v,i)=>({
     ...v,
-    atributo: document.getElementById('va-'+i).value,
-    valor: document.getElementById('vv-'+i).value.trim(),
+    pares: [
+      {atributo: document.getElementById('va1-'+i).value, valor: document.getElementById('vv1-'+i).value.trim()},
+      {atributo: document.getElementById('va2-'+i).value, valor: document.getElementById('vv2-'+i).value.trim()},
+    ].filter(p => p.atributo && p.valor),
     incluir: document.getElementById('vi-'+i).checked,
-  })).filter(v => v.incluir && v.valor);
+  })).filter(v => v.incluir && v.pares.length);
 }
 
 function validarComun(){
@@ -692,21 +801,25 @@ async function publicarML(){
     listing_type_id: document.getElementById('w-listing').value,
     pictures: FOTOS.map(u=>({source:u})),
   };
+  const marca = document.getElementById('w-marca').value.trim();
+  const attrsItem = [];
+  if (marca) attrsItem.push({id:'BRAND', value_name: marca});
   if (vars.length){
     item.variations = vars.map(v=>({
       price: precio,
       available_quantity: Math.max(0, Math.floor(v.stock)),
       seller_custom_field: v.sku,
-      attribute_combinations: [
-        v.atributo === 'Color' ? {id:'COLOR', value_name:v.valor}
-                               : {id:'SIZE',  value_name:v.valor}
-      ],
+      attribute_combinations: v.pares.map(p =>
+        p.atributo === 'Color' ? {id:'COLOR', value_name:p.valor} :
+        p.atributo === 'Talle' ? {id:'SIZE',  value_name:p.valor} :
+        {name: p.atributo, value_name: p.valor}),
       picture_ids: FOTOS,
     }));
   } else {
     item.available_quantity = parseInt(document.getElementById('w-cantidad').value) || 0;
-    item.attributes = [{id:'SELLER_SKU', value_name: W.sku_raiz}];
+    attrsItem.push({id:'SELLER_SKU', value_name: W.sku_raiz});
   }
+  if (attrsItem.length) item.attributes = attrsItem;
 
   const btn = document.getElementById('btn-pub-ml');
   btn.disabled = true; btn.textContent = 'Publicando...';
@@ -753,14 +866,19 @@ async function publicarTN(){
     images: FOTOS.map(u=>({src:u})),
     published: document.getElementById('w-tn-pub').value === 'true',
   };
+  if (W._catsTN && W._catsTN.length) product.categories = W._catsTN.map(c=>c.id);
   if (vars.length){
-    const attrs = [...new Set(vars.map(v=>v.atributo))];
+    const attrs = [];
+    vars.forEach(v => v.pares.forEach(p => { if (!attrs.includes(p.atributo)) attrs.push(p.atributo); }));
     product.attributes = attrs.map(a=>({es:a}));
     product.variants = vars.map(v=>({
       price: String(precio),
       stock: Math.max(0, Math.floor(v.stock)),
       sku: v.sku,
-      values: attrs.map(a => ({es: v.atributo === a ? v.valor : '-'})),
+      values: attrs.map(a => {
+        const p = v.pares.find(x => x.atributo === a);
+        return {es: p ? p.valor : '-'};
+      }),
     }));
   } else {
     product.variants = [{
