@@ -97,15 +97,19 @@
       <div><label>Client Secret Mercado Libre</label><input id="cfg-ml-secret" type="password" placeholder="secret de la app"></div>
       <div><label>Token Mercado Libre <span style="color:#aaa">(se completa solo al conectar)</span></label><input id="cfg-ml-token" type="password" placeholder="APP_USR-..."></div>
       <div><label>User ID Mercado Libre</label><input id="cfg-ml-user" placeholder="246901020"></div>
-      <div><label>Store ID Tiendanube</label><input id="cfg-tn-store" placeholder="123456"></div>
-      <div><label>Token Tiendanube</label><input id="cfg-tn-token" type="password" placeholder="access token"></div>
+      <div><label>App ID Tiendanube (Client ID)</label><input id="cfg-tn-app" placeholder="ID de la app en el panel de socios"></div>
+      <div><label>Client Secret Tiendanube</label><input id="cfg-tn-secret" type="password" placeholder="secret de la app"></div>
+      <div><label>Store ID Tiendanube <span style="color:#aaa">(se completa solo)</span></label><input id="cfg-tn-store" placeholder="123456"></div>
+      <div><label>Token Tiendanube <span style="color:#aaa">(se completa solo)</span></label><input id="cfg-tn-token" type="password" placeholder="access token"></div>
       <div><label>API key Anthropic (descripciones IA, opcional)</label><input id="cfg-ai-key" type="password" placeholder="sk-ant-..."></div>
       <div><label>ID planilla de stock (Google Sheets)</label><input id="cfg-sheet" placeholder="ID de la planilla"></div>
     </div>
     <button class="btn btn-sm" onclick="saveCfg(true)">Guardar configuración</button>
     <button class="btn btn-sm btn-green" onclick="conectarML()">🔗 Conectar con Mercado Libre</button>
+    <button class="btn btn-sm btn-green" onclick="conectarTN()">🔗 Conectar con Tiendanube</button>
     <span id="cfg-status" style="font-size:12px;color:#1e7e34;margin-left:8px"></span>
     <span id="ml-status" class="badge badge-gray" style="margin-left:4px"></span>
+    <span id="tn-status" class="badge badge-gray" style="margin-left:4px"></span>
   </div>
 
   <div class="progress-label" id="progress"></div>
@@ -247,8 +251,10 @@
 // ------------------------------------------------------------ configuración
 const CFG_KEYS = {
   'cfg-ml-app':'ml_app_id', 'cfg-ml-secret':'ml_app_secret',
-  'cfg-ml-token':'ml_token', 'cfg-ml-user':'ml_user_id', 'cfg-tn-store':'tn_store_id',
-  'cfg-tn-token':'tn_token', 'cfg-ai-key':'anthropic_key', 'cfg-sheet':'stock_sheet_id',
+  'cfg-ml-token':'ml_token', 'cfg-ml-user':'ml_user_id',
+  'cfg-tn-app':'tn_app_id', 'cfg-tn-secret':'tn_app_secret',
+  'cfg-tn-store':'tn_store_id', 'cfg-tn-token':'tn_token',
+  'cfg-ai-key':'anthropic_key', 'cfg-sheet':'stock_sheet_id',
 };
 function loadCfg(){
   for (const [id,key] of Object.entries(CFG_KEYS)){
@@ -277,14 +283,35 @@ function mlStatus(){
   if (exp && Date.now() > exp){ el.textContent = 'ML: token vencido'; el.className = 'badge badge-amber'; return; }
   el.textContent = 'ML: conectado'; el.className = 'badge badge-green';
 }
+function tnStatus(){
+  const el = document.getElementById('tn-status');
+  if (cfg('cfg-tn-token') && cfg('cfg-tn-store')){ el.textContent = 'TN: conectado'; el.className = 'badge badge-green'; }
+  else { el.textContent = 'TN: sin conectar'; el.className = 'badge badge-gray'; }
+}
 function conectarML(){
   saveCfg(false);
   const appId = cfg('cfg-ml-app');
   if (!appId){ alert('Cargá primero el App ID de Mercado Libre (Client ID de tu app en el DevCenter).'); return; }
+  localStorage.setItem('oauth_pending', 'ml');
   const redirect = location.origin + '/sync';
   location.href = 'https://auth.mercadolibre.com.ar/authorization?response_type=code'
     + '&client_id=' + encodeURIComponent(appId)
     + '&redirect_uri=' + encodeURIComponent(redirect);
+}
+function conectarTN(){
+  saveCfg(false);
+  const appId = cfg('cfg-tn-app');
+  if (!appId){ alert('Cargá primero el App ID de Tiendanube (el ID de tu app en el panel de socios).'); return; }
+  localStorage.setItem('oauth_pending', 'tn');
+  location.href = 'https://www.tiendanube.com/apps/' + encodeURIComponent(appId) + '/authorize';
+}
+async function canjearTokenTN(code){
+  const d = await api('/api/sync/tn/token', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({app_id: cfg('cfg-tn-app'), secret: cfg('cfg-tn-secret'), code})});
+  document.getElementById('cfg-tn-token').value = d.access_token;
+  if (d.store_id) document.getElementById('cfg-tn-store').value = d.store_id;
+  saveCfg(false);
+  tnStatus();
 }
 async function canjearToken(body){
   const d = await api('/api/sync/ml/token', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -301,6 +328,17 @@ async function procesarCodeOAuth(){
   const code = params.get('code');
   if (!code) return;
   history.replaceState(null, '', '/sync');  // limpia el ?code=... de la URL
+  const pending = localStorage.getItem('oauth_pending') || 'ml';
+  localStorage.removeItem('oauth_pending');
+  if (pending === 'tn'){
+    try {
+      await canjearTokenTN(code);
+      progress('✓ Conectado con Tiendanube.');
+    } catch(e){
+      progress('❌ No se pudo conectar con Tiendanube: ' + e.message);
+    }
+    return;
+  }
   try {
     await canjearToken({code, redirect_uri: location.origin + '/sync'});
     progress('✓ Conectado con Mercado Libre. Ya podés analizar el catálogo.');
@@ -318,6 +356,7 @@ async function refrescarTokenSiHaceFalta(){
 }
 procesarCodeOAuth();
 mlStatus();
+tnStatus();
 
 // Sufijos de variante Hansa -> valor legible
 const SUFIJOS = {

@@ -317,6 +317,29 @@ def publish_ml():
 
 # ---------------------------------------------------------------- Tiendanube
 
+@sync_bp.route("/tn/token", methods=["POST"])
+def tn_token():
+    """Canjea el code de OAuth de Tiendanube por un access token (no vence)."""
+    body   = request.json or {}
+    app_id = body.get("app_id", "").strip()
+    secret = body.get("secret", "").strip()
+    code   = body.get("code", "").strip()
+    if not app_id or not secret or not code:
+        return jsonify({"error": "Faltan App ID, Client Secret o code de Tiendanube"}), 400
+    r = requests.post("https://www.tiendanube.com/apps/authorize/token",
+                      data={"client_id": app_id, "client_secret": secret,
+                            "grant_type": "authorization_code", "code": code},
+                      headers={"Accept": "application/json"}, timeout=20)
+    try:
+        d = r.json()
+    except ValueError:
+        d = {}
+    if r.status_code != 200 or not d.get("access_token"):
+        detail = d.get("error_description") or d.get("error") or r.text[:300]
+        return jsonify({"error": "Tiendanube rechazó la autorización", "detalle": detail}), 502
+    return jsonify({"access_token": d["access_token"], "store_id": d.get("user_id")})
+
+
 @sync_bp.route("/tn")
 def get_tn():
     store_id = request.args.get("store_id", os.environ.get("TN_STORE_ID", ""))
