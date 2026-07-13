@@ -380,8 +380,8 @@ let tnDisponible = false;
 
 async function api(path, opts){
   const r = await fetch(path, opts);
-  const data = await r.json().catch(()=>({error:'Respuesta inválida del servidor'}));
-  if (!r.ok) throw new Error(data.error || ('HTTP '+r.status));
+  const data = await r.json().catch(()=>({error:'HTTP '+r.status+' — el servidor devolvió una respuesta no válida (¿la app se está reiniciando? probá de nuevo en 1 minuto)'}));
+  if (!r.ok) throw new Error(data.detalle ? (data.error+': '+JSON.stringify(data.detalle)) : (data.error || ('HTTP '+r.status)));
   return data;
 }
 function progress(msg){ document.getElementById('progress').textContent = msg; }
