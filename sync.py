@@ -73,36 +73,47 @@ def gtins_de_item_ml(item):
 
 def ml_listar_ids(token, user_id, status):
     """Todos los IDs de items del vendedor. Usa scan (sin tope) y cae a
-    paginación por offset (tope 1000) si scan no está disponible."""
-    ids, scroll, vueltas = [], None, 0
+    paginación por offset (tope 1000) si scan no funciona o no avanza."""
+    ids, vistos, scroll = [], set(), None
+    scan_completo = False
     try:
-        while vueltas < 300:
-            vueltas += 1
+        for _ in range(300):
             params = {"status": status, "limit": 100, "search_type": "scan"}
             if scroll:
                 params["scroll_id"] = scroll
             data = ml_get(f"/users/{user_id}/items/search", token, params)
             res = data.get("results", [])
+            total = data.get("paging", {}).get("total", 0)
             if not res:
+                scan_completo = True
                 break
-            ids += res
-            scroll = data.get("scroll_id") or scroll
-            total = data.get("paging", {}).get("total", 0)
+            nuevos = [x for x in res if x not in vistos]
+            ids += nuevos
+            vistos.update(nuevos)
             if total and len(ids) >= total:
+                scan_completo = True
                 break
-        return ids
+            nuevo_scroll = data.get("scroll_id")
+            if not nuevo_scroll or not nuevos:
+                # scan sin cursor o repitiendo la misma página: no sirve
+                break
+            scroll = nuevo_scroll
     except requests.HTTPError:
-        ids, offset = [], 0
-        while True:
-            data = ml_get(f"/users/{user_id}/items/search", token,
-                          {"status": status, "limit": 100, "offset": offset})
-            res = data.get("results", [])
-            ids += res
-            total = data.get("paging", {}).get("total", 0)
-            offset += 100
-            if not res or offset >= min(total, 1000):
-                break
+        pass
+    if scan_completo:
         return ids
+    # Fallback: offset clásico (tope 1000 por estado)
+    ids, offset = [], 0
+    while True:
+        data = ml_get(f"/users/{user_id}/items/search", token,
+                      {"status": status, "limit": 100, "offset": offset})
+        res = data.get("results", [])
+        ids += res
+        total = data.get("paging", {}).get("total", 0)
+        offset += 100
+        if not res or offset >= min(total, 1000):
+            break
+    return ids
 
 
 def skus_de_item_ml(item):
