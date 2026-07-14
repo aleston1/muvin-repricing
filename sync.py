@@ -7,6 +7,7 @@ aprobadas manualmente.
 """
 from flask import Blueprint, jsonify, request
 import requests
+import base64
 import csv
 import io
 import json
@@ -46,6 +47,45 @@ def ml_post(path, token, body):
     r = requests.post(ML_BASE + path, headers={"Authorization": f"Bearer {token}"},
                       json=body, timeout=30)
     return r
+
+
+# ------------------------------------------------------------ fotos (re-hosting)
+# Muchos sitios bloquean que terceros descarguen sus imágenes (hotlink).
+# Bajamos la imagen nosotros con UA de navegador y la subimos como archivo
+# propio a cada plataforma.
+
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/125.0 Safari/537.36")
+
+
+def descargar_imagen(url):
+    r = requests.get(url, headers={"User-Agent": BROWSER_UA, "Accept": "image/*,*/*;q=0.8",
+                                   "Referer": url},
+                     timeout=25, allow_redirects=True)
+    r.raise_for_status()
+    ct = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if not ct.startswith("image/") or len(r.content) < 1000:
+        raise RuntimeError(f"la URL no devuelve una imagen ({ct or 'sin tipo'})")
+    if len(r.content) > 10 * 1024 * 1024:
+        raise RuntimeError("imagen de más de 10 MB")
+    ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+           "image/gif": "gif"}.get(ct, "jpg")
+    return r.content, ct, ext
+
+
+def ml_subir_foto(token, url):
+    """Descarga la imagen y la sube al hosting de fotos de ML. Devuelve el
+    picture id, o None si no se pudo (se usará la URL original)."""
+    try:
+        contenido, ct, ext = descargar_imagen(url)
+        r = requests.post(ML_BASE + "/pictures/items/upload",
+                          headers={"Authorization": f"Bearer {token}"},
+                          files={"file": (f"foto.{ext}", contenido, ct)}, timeout=60)
+        if r.status_code in (200, 201):
+            return r.json().get("id")
+    except Exception:
+        pass
+    return None
 
 
 def sku_raiz(sku):
@@ -589,6 +629,26 @@ def publish_ml():
     descripcion = body.get("descripcion", "")
     if not token or not item:
         return jsonify({"error": "Faltan token o item"}), 400
+
+    # ML exige family_name (agrupador de productos del vendedor) en varias
+    # categorías: si no vino, usamos el título
+    if not item.get("family_name") and item.get("title"):
+        item["family_name"] = str(item["title"])[:60]
+
+    # Re-alojar fotos en el hosting de ML para evitar rechazos por hotlink
+    mapa_fotos = {}
+    for pic in item.get("pictures") or []:
+        u = pic.get("source")
+        if u:
+            pid = ml_subir_foto(token, u)
+            if pid:
+                mapa_fotos[u] = pid
+                pic.clear()
+                pic["id"] = pid
+    for v in item.get("variations") or []:
+        if v.get("picture_ids"):
+            v["picture_ids"] = [mapa_fotos.get(u, u) for u in v["picture_ids"]]
+
     try:
         r = ml_post("/items", token, item)
     except requests.RequestException as e:
@@ -678,9 +738,27 @@ def publish_tn():
     product  = body.get("product")
     if not store_id or not token or not product:
         return jsonify({"error": "Faltan store_id, token o product"}), 400
+
+    # Re-alojar fotos: se descargan acá y van a TN como adjunto base64, para
+    # evitar "Remote image not found" en sitios que bloquean hotlink
+    nuevas = []
+    for im in product.get("images") or []:
+        u = im.get("src")
+        if u:
+            try:
+                contenido, ct, ext = descargar_imagen(u)
+                nuevas.append({"attachment": base64.b64encode(contenido).decode(),
+                               "filename": f"foto-{len(nuevas)+1}.{ext}"})
+                continue
+            except Exception:
+                pass  # se deja la URL original y que TN intente
+        nuevas.append(im)
+    if nuevas:
+        product["images"] = nuevas
+
     try:
         r = requests.post(f"{TN_BASE}/{store_id}/products",
-                          headers=tn_headers(token), json=product, timeout=30)
+                          headers=tn_headers(token), json=product, timeout=60)
     except requests.RequestException as e:
         return jsonify({"error": f"No se pudo contactar a Tiendanube: {e}"}), 502
     if r.status_code not in (200, 201):
