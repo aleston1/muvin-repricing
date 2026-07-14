@@ -471,9 +471,20 @@ async function analizar(){
     STOCK = stock.productos;
     if (stock.warning) progress('⚠ '+stock.warning);
 
-    progress('2/3 · Leyendo publicaciones de Mercado Libre (puede tardar)...');
-    const ml = await api(`/api/sync/ml?token=${encodeURIComponent(mlToken)}&user_id=${encodeURIComponent(cfg('cfg-ml-user'))}`);
-    ML = ml.items_por_raiz;
+    progress('2/3 · Buscando publicaciones de Mercado Libre...');
+    const idsResp = await api(`/api/sync/ml/ids?token=${encodeURIComponent(mlToken)}&user_id=${encodeURIComponent(cfg('cfg-ml-user'))}`);
+    const mlIds = idsResp.ids || [];
+    ML = {};
+    const sinSkuRaw = [];
+    for (let i = 0; i < mlIds.length; i += 200){
+      progress(`2/3 · Leyendo publicaciones de Mercado Libre (${Math.min(i+200, mlIds.length)}/${mlIds.length})...`);
+      const d = await api('/api/sync/ml/detalles', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({token: mlToken, ids: mlIds.slice(i, i+200)})});
+      for (const it of d.items){
+        if (it.raices.length) it.raices.forEach(r => (ML[r] = ML[r] || []).push(it.resumen));
+        else sinSkuRaw.push(it.resumen);
+      }
+    }
 
     // Rescate por código de barras: publicaciones sin SKU pero con GTIN que
     // coincide con el código de barras del ERP
@@ -482,7 +493,7 @@ async function analizar(){
       if (v.barcode) porBarcode[v.barcode] = p.sku_raiz;
     }));
     SIN_SKU = [];
-    (ml.sin_sku || []).forEach(item => {
+    sinSkuRaw.forEach(item => {
       const raiz = (item.gtins || []).map(g => porBarcode[g]).find(Boolean);
       if (raiz) (ML[raiz] = ML[raiz] || []).push(item);
       else SIN_SKU.push(item);
