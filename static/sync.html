@@ -596,7 +596,7 @@ function debugItem(){
   if (m) v = 'MLA' + m[1];
   else if (/^\d+$/.test(v)) v = 'MLA' + v;
   if (!v){ alert('Pegá el número de publicación (lo ves en ML como #1695044184) o su ID MLA...'); return; }
-  window.open(`/api/sync/ml/debug?item_id=${encodeURIComponent(v)}&token=${encodeURIComponent(cfg('cfg-ml-token'))}`, '_blank');
+  window.open(`/api/sync/ml/debug?item_id=${encodeURIComponent(v)}&token=${encodeURIComponent(cfg('cfg-ml-token'))}&user_id=${encodeURIComponent(cfg('cfg-ml-user'))}`, '_blank');
 }
 function renderDiag(){
   const el = document.getElementById('diag');
