@@ -502,9 +502,18 @@ async function analizar(){
 
     tnDisponible = !!(cfg('cfg-tn-store') && cfg('cfg-tn-token'));
     if (tnDisponible){
-      progress('3/3 · Leyendo productos de Tiendanube...');
-      const tn = await api(`/api/sync/tn?store_id=${encodeURIComponent(cfg('cfg-tn-store'))}&token=${encodeURIComponent(cfg('cfg-tn-token'))}`);
-      TN = tn.productos_por_raiz;
+      TN = {};
+      let page = 1, hayMas = true, leidos = 0;
+      while (hayMas && page <= 100){
+        progress(`3/3 · Leyendo productos de Tiendanube (${leidos} leídos, página ${page})...`);
+        const d = await api(`/api/sync/tn?store_id=${encodeURIComponent(cfg('cfg-tn-store'))}&token=${encodeURIComponent(cfg('cfg-tn-token'))}&page=${page}`);
+        for (const it of d.items){
+          it.raices.forEach(r => (TN[r] = TN[r] || []).push(it.resumen));
+        }
+        leidos += d.items.length;
+        hayMas = d.has_more;
+        page++;
+      }
     } else {
       TN = {};
       progress('Sin credenciales de Tiendanube: se compara solo contra Mercado Libre.');

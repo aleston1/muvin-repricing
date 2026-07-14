@@ -596,41 +596,30 @@ def tn_token():
 
 @sync_bp.route("/tn")
 def get_tn():
+    """Una página de productos de Tiendanube por llamada (la UI itera con
+    progreso, para no exceder el timeout del servidor)."""
     store_id = request.args.get("store_id", os.environ.get("TN_STORE_ID", ""))
     token    = request.args.get("token", os.environ.get("TN_TOKEN", ""))
+    page     = int(request.args.get("page", 1))
     if not store_id or not token:
         return jsonify({"error": "Faltan store_id o token de Tiendanube"}), 400
     try:
-        productos_por_raiz = {}
-        sin_sku = []
-        page = 1
-        total = 0
-        while True:
-            r = requests.get(f"{TN_BASE}/{store_id}/products",
-                             headers=tn_headers(token),
-                             params={"page": page, "per_page": 200,
-                                     "fields": "id,name,canonical_url,published,variants"},
-                             timeout=30)
-            if r.status_code == 404:  # última página
-                break
-            r.raise_for_status()
-            products = r.json()
-            if not products:
-                break
-            total += len(products)
-            for p in products:
-                resumen = {"id": p.get("id"), "name": tn_nombre(p.get("name")),
-                           "published": p.get("published"), "url": p.get("canonical_url")}
-                raices = {sku_raiz(v.get("sku")) for v in p.get("variants") or []} - {None}
-                if not raices:
-                    sin_sku.append(resumen)
-                for raiz in raices:
-                    productos_por_raiz.setdefault(raiz, []).append(resumen)
-            if len(products) < 200:
-                break
-            page += 1
-        return jsonify({"productos_por_raiz": productos_por_raiz, "sin_sku": sin_sku,
-                        "total_productos": total})
+        r = requests.get(f"{TN_BASE}/{store_id}/products",
+                         headers=tn_headers(token),
+                         params={"page": page, "per_page": 200,
+                                 "fields": "id,name,canonical_url,published,variants"},
+                         timeout=30)
+        if r.status_code == 404:  # última página
+            return jsonify({"items": [], "has_more": False, "page": page})
+        r.raise_for_status()
+        products = r.json()
+        items = []
+        for p in products:
+            resumen = {"id": p.get("id"), "name": tn_nombre(p.get("name")),
+                       "published": p.get("published"), "url": p.get("canonical_url")}
+            raices = sorted({sku_raiz(v.get("sku")) for v in p.get("variants") or []} - {None})
+            items.append({"resumen": resumen, "raices": raices})
+        return jsonify({"items": items, "has_more": len(products) == 200, "page": page})
     except requests.HTTPError as e:
         return jsonify({"error": f"Tiendanube: {e.response.status_code} {e.response.text[:300]}"}), 502
     except Exception as e:
