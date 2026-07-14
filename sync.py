@@ -503,9 +503,14 @@ def ml_debug():
         return jsonify({"error": "Faltan token o item_id"}), 400
     try:
         item = ml_get(f"/items/{item_id}", token, {"include_attributes": "all"})
+        user_id = request.args.get("user_id", os.environ.get("ML_USER_ID", "246901020"))
         return jsonify({
             "id": item.get("id"),
             "title": item.get("title"),
+            "status": item.get("status"),
+            "seller_id": item.get("seller_id"),
+            "es_de_esta_cuenta": str(item.get("seller_id")) == str(user_id),
+            "cuenta_configurada": user_id,
             "seller_custom_field": item.get("seller_custom_field"),
             "skus_detectados": sorted(skus_de_item_ml(item)),
             "gtins_detectados": sorted(gtins_de_item_ml(item)),
