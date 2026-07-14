@@ -389,6 +389,57 @@ def get_ml():
         return jsonify({"error": str(e)}), 500
 
 
+@sync_bp.route("/ml/ids")
+def ml_ids():
+    """Solo los IDs de publicaciones (rápido). El detalle se pide por tandas
+    con /ml/detalles para no exceder el timeout del servidor."""
+    token   = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    user_id = request.args.get("user_id", os.environ.get("ML_USER_ID", "246901020"))
+    if not token:
+        return jsonify({"error": "Falta el token de Mercado Libre"}), 400
+    try:
+        ids = []
+        for status in ("active", "paused"):
+            ids += ml_listar_ids(token, user_id, status)
+        return jsonify({"ids": ids})
+    except requests.HTTPError as e:
+        return jsonify({"error": f"Mercado Libre: {e.response.status_code} {e.response.text[:300]}"}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@sync_bp.route("/ml/detalles", methods=["POST"])
+def ml_detalles():
+    """Detalle (SKUs, GTINs, estado) de hasta 500 publicaciones por llamada."""
+    body  = request.json or {}
+    token = body.get("token", os.environ.get("ML_TOKEN", ""))
+    ids   = body.get("ids") or []
+    if not token or not ids:
+        return jsonify({"error": "Faltan token o ids"}), 400
+    ids = ids[:500]
+    try:
+        out = []
+        attrs = "id,title,status,permalink,price,available_quantity,thumbnail,seller_custom_field,attributes,variations"
+        for i in range(0, len(ids), 20):
+            chunk = ids[i:i + 20]
+            details = ml_get("/items", token, {"ids": ",".join(chunk), "attributes": attrs})
+            for x in details:
+                if x.get("code") != 200:
+                    continue
+                item = x["body"]
+                resumen = {"id": item.get("id"), "title": item.get("title"),
+                           "status": item.get("status"), "permalink": item.get("permalink"),
+                           "price": item.get("price"),
+                           "gtins": sorted(gtins_de_item_ml(item))}
+                raices = sorted({sku_raiz(s) for s in skus_de_item_ml(item)} - {None})
+                out.append({"resumen": resumen, "raices": raices})
+        return jsonify({"items": out})
+    except requests.HTTPError as e:
+        return jsonify({"error": f"Mercado Libre: {e.response.status_code} {e.response.text[:300]}"}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @sync_bp.route("/ml/token", methods=["POST"])
 def ml_token():
     """Canjea el code de OAuth (o un refresh_token) por un access token de ML."""
