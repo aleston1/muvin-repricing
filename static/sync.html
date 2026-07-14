@@ -595,7 +595,7 @@ function renderDiag(){
     <summary style="cursor:pointer;font-size:13px;color:#856404">⚠ ${SIN_SKU.length} publicaciones de ML sin SKU ni código de barras cruzable — pueden figurar como "falta" aunque existan (clic para ver)</summary>
     <div style="font-size:12px;color:#666;margin-top:8px;line-height:1.8">
       Solución de fondo: agregales el SKU (código Hansa) en la publicación de ML y se van a cruzar solas en el próximo análisis.<br>` +
-    SIN_SKU.slice(0,80).map(i => `<a href="${i.permalink||'#'}" target="_blank" rel="noopener">${escapeHtml(i.title||i.id)}</a>`).join('<br>') +
+    SIN_SKU.slice(0,80).map(i => `<a href="${i.permalink||'#'}" target="_blank" rel="noopener">${escapeHtml(i.title||i.id)}</a> <a href="/api/sync/ml/debug?item_id=${encodeURIComponent(i.id)}&token=${encodeURIComponent(cfg('cfg-ml-token'))}" target="_blank" rel="noopener" style="color:#856404">[ver datos]</a>`).join('<br>') +
     (SIN_SKU.length > 80 ? `<br>… y ${SIN_SKU.length-80} más` : '') +
     `</div></details>`;
 }
