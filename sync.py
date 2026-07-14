@@ -364,10 +364,11 @@ def get_ml():
             ids += ml_listar_ids(token, user_id, status)
         items_por_raiz = {}
         sin_sku = []
-        attrs = "id,title,status,permalink,price,available_quantity,thumbnail,seller_custom_field,attributes,variations"
         for i in range(0, len(ids), 20):
             chunk = ids[i:i + 20]
-            details = ml_get("/items", token, {"ids": ",".join(chunk), "attributes": attrs})
+            # include_attributes=all: sin esto ML recorta atributos (incluido
+            # el SELLER_SKU de las variaciones) en las consultas multiget
+            details = ml_get("/items", token, {"ids": ",".join(chunk), "include_attributes": "all"})
             for x in details:
                 if x.get("code") != 200:
                     continue
@@ -419,10 +420,11 @@ def ml_detalles():
     ids = ids[:500]
     try:
         out = []
-        attrs = "id,title,status,permalink,price,available_quantity,thumbnail,seller_custom_field,attributes,variations"
         for i in range(0, len(ids), 20):
             chunk = ids[i:i + 20]
-            details = ml_get("/items", token, {"ids": ",".join(chunk), "attributes": attrs})
+            # include_attributes=all: sin esto ML recorta atributos (incluido
+            # el SELLER_SKU de las variaciones) en las consultas multiget
+            details = ml_get("/items", token, {"ids": ",".join(chunk), "include_attributes": "all"})
             for x in details:
                 if x.get("code") != 200:
                     continue
@@ -436,6 +438,37 @@ def ml_detalles():
         return jsonify({"items": out})
     except requests.HTTPError as e:
         return jsonify({"error": f"Mercado Libre: {e.response.status_code} {e.response.text[:300]}"}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@sync_bp.route("/ml/debug")
+def ml_debug():
+    """Item completo de ML (con todos los atributos) para diagnosticar por
+    qué una publicación no cruza con el ERP."""
+    token   = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    item_id = request.args.get("item_id", "")
+    if not token or not item_id:
+        return jsonify({"error": "Faltan token o item_id"}), 400
+    try:
+        item = ml_get(f"/items/{item_id}", token, {"include_attributes": "all"})
+        return jsonify({
+            "id": item.get("id"),
+            "title": item.get("title"),
+            "seller_custom_field": item.get("seller_custom_field"),
+            "skus_detectados": sorted(skus_de_item_ml(item)),
+            "gtins_detectados": sorted(gtins_de_item_ml(item)),
+            "attributes": [{"id": a.get("id"), "value_name": a.get("value_name")}
+                           for a in item.get("attributes") or []],
+            "variations": [{
+                "id": v.get("id"),
+                "seller_custom_field": v.get("seller_custom_field"),
+                "attributes": [{"id": a.get("id"), "value_name": a.get("value_name")}
+                               for a in v.get("attributes") or []],
+                "attribute_combinations": [{"id": a.get("id"), "value_name": a.get("value_name")}
+                                           for a in v.get("attribute_combinations") or []],
+            } for v in item.get("variations") or []],
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
