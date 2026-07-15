@@ -411,8 +411,11 @@ def get_ml():
         return jsonify({"error": "Falta el token de Mercado Libre"}), 400
     try:
         ids = []
-        for status in ("active", "paused"):
-            ids += ml_listar_ids(token, user_id, status)
+        for status in ("active", "paused", "under_review", "inactive"):
+            try:
+                ids += ml_listar_ids(token, user_id, status)
+            except requests.HTTPError:
+                continue
         items_por_raiz = {}
         sin_sku = []
         for i in range(0, len(ids), 20):
@@ -451,11 +454,14 @@ def ml_ids():
         return jsonify({"error": "Falta el token de Mercado Libre"}), 400
     try:
         ids = []
-        for status in ("active", "paused"):
-            ids += ml_listar_ids(token, user_id, status)
+        # under_review e inactive también cuentan como "ya publicado": si no
+        # se leen, esos items figuran como faltantes aunque existan
+        for status in ("active", "paused", "under_review", "inactive"):
+            try:
+                ids += ml_listar_ids(token, user_id, status)
+            except requests.HTTPError:
+                continue  # algún estado puede no estar habilitado para la cuenta
         return jsonify({"ids": ids})
-    except requests.HTTPError as e:
-        return jsonify({"error": f"Mercado Libre: {e.response.status_code} {e.response.text[:300]}"}), 502
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

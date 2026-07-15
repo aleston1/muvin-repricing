@@ -567,8 +567,9 @@ function render(){
     return;
   }
   tbody.innerHTML = rows.slice(0, 500).map(r => {
+    const ESTADOS_ML = {active:'activa', paused:'pausada', under_review:'en revisión', inactive:'incompleta'};
     const mlCell = r.ml.length
-      ? r.ml.map(i=>`<a class="link-ml" href="${i.permalink||'#'}" target="_blank" rel="noopener">✓ ${i.status==='paused'?'pausada':'activa'}</a>`).join('<br>')
+      ? r.ml.map(i=>`<a class="link-ml" href="${i.permalink||'#'}" target="_blank" rel="noopener">✓ ${ESTADOS_ML[i.status]||i.status}</a>`).join('<br>')
       : '<span class="badge badge-red">falta</span>';
     const tnCell = !tnDisponible ? '<span class="badge badge-gray">sin config</span>'
       : (r.tn.length
