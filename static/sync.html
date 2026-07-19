@@ -671,6 +671,9 @@ async function abrirWizard(raiz){
 
   document.getElementById('wizard-bg').classList.add('open');
 
+  // Si el producto ya existe en la otra plataforma, precargar sus fotos
+  cargarFotosExistentes();
+
   // Borrador: título + links de búsqueda de fotos
   try {
     const d = await api('/api/sync/draft', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -683,6 +686,26 @@ async function abrirWizard(raiz){
     predecirCategoria();
     cargarFotosCandidatas();
   } catch(e){ /* el usuario puede completar a mano */ }
+}
+
+async function cargarFotosExistentes(){
+  try {
+    if (W.tn && W.tn.length && cfg('cfg-tn-store') && cfg('cfg-tn-token')){
+      const d = await api(`/api/sync/tn/fotos?store_id=${encodeURIComponent(cfg('cfg-tn-store'))}&token=${encodeURIComponent(cfg('cfg-tn-token'))}&product_id=${encodeURIComponent(W.tn[0].id)}`);
+      if (d.fotos && d.fotos.length){
+        FOTOS = d.fotos.slice(0, 10);
+        renderFotos(); renderCandidatas();
+        return;
+      }
+    }
+    if (W.ml && W.ml.length){
+      const d = await api(`/api/sync/ml/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&item_id=${encodeURIComponent(W.ml[0].id)}`);
+      if (d.fotos && d.fotos.length){
+        FOTOS = d.fotos.slice(0, 10);
+        renderFotos(); renderCandidatas();
+      }
+    }
+  } catch(e){ /* si falla, quedan los caminos manuales */ }
 }
 
 let CANDIDATAS = [];

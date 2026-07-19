@@ -499,6 +499,23 @@ def ml_detalles():
         return jsonify({"error": str(e)}), 500
 
 
+@sync_bp.route("/ml/fotos")
+def ml_fotos():
+    """Fotos de una publicación existente de ML (para reutilizarlas al
+    publicar el mismo producto en Tiendanube)."""
+    token   = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    item_id = request.args.get("item_id", "")
+    if not token or not item_id:
+        return jsonify({"fotos": [], "error": "Faltan parámetros"})
+    try:
+        item = ml_get(f"/items/{item_id}", token)
+        return jsonify({"fotos": [p.get("secure_url") or p.get("url")
+                                  for p in item.get("pictures") or []
+                                  if p.get("secure_url") or p.get("url")]})
+    except Exception as e:
+        return jsonify({"fotos": [], "error": str(e)})
+
+
 @sync_bp.route("/ml/debug")
 def ml_debug():
     """Item completo de ML (con todos los atributos) para diagnosticar por
@@ -739,6 +756,26 @@ def get_tn():
         return jsonify({"error": f"Tiendanube: {e.response.status_code} {e.response.text[:300]}"}), 502
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@sync_bp.route("/tn/fotos")
+def tn_fotos():
+    """Fotos de un producto ya publicado en Tiendanube (para reutilizarlas
+    al publicar el mismo producto en ML)."""
+    store_id   = request.args.get("store_id", os.environ.get("TN_STORE_ID", ""))
+    token      = request.args.get("token", os.environ.get("TN_TOKEN", ""))
+    product_id = request.args.get("product_id", "")
+    if not store_id or not token or not product_id:
+        return jsonify({"fotos": [], "error": "Faltan parámetros"})
+    try:
+        r = requests.get(f"{TN_BASE}/{store_id}/products/{product_id}",
+                         headers=tn_headers(token), params={"fields": "id,images"},
+                         timeout=20)
+        r.raise_for_status()
+        p = r.json()
+        return jsonify({"fotos": [im.get("src") for im in p.get("images") or [] if im.get("src")]})
+    except Exception as e:
+        return jsonify({"fotos": [], "error": str(e)})
 
 
 @sync_bp.route("/publish/tn", methods=["POST"])
