@@ -925,16 +925,24 @@ def texto_a_html(texto):
     return "".join(html_partes)
 
 
+def con_codigo(texto, sku):
+    """Asegura la línea final 'Código: SKU' sin duplicarla."""
+    if sku and not re.search(r"C[óo]digo:\s*" + re.escape(sku), texto, re.I):
+        texto = texto.rstrip() + f"\n\nCódigo: {sku}"
+    return texto
+
+
 @sync_bp.route("/describe", methods=["POST"])
 def describe():
     body    = request.json or {}
     nombre  = body.get("nombre", "")
     titulo  = body.get("titulo") or titulo_desde_nombre(nombre)
     datos   = body.get("datos", "")  # specs/notas extra que cargue el usuario
+    sku     = (body.get("sku_raiz") or "").strip()
     api_key = body.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
 
     if not api_key:
-        texto = descripcion_plantilla(nombre, titulo)
+        texto = con_codigo(descripcion_plantilla(nombre, titulo), sku)
         return jsonify({"texto": texto, "html": texto_a_html(texto),
                         "generado_con_ia": False,
                         "warning": "Sin API key de Anthropic: se usó una plantilla básica. "
@@ -954,9 +962,10 @@ def describe():
         texto = next((b.text for b in resp.content if b.type == "text"), "").strip()
         if not texto:
             raise RuntimeError("La API no devolvió texto")
+        texto = con_codigo(texto, sku)
         return jsonify({"texto": texto, "html": texto_a_html(texto), "generado_con_ia": True})
     except Exception as e:
-        texto = descripcion_plantilla(nombre, titulo)
+        texto = con_codigo(descripcion_plantilla(nombre, titulo), sku)
         return jsonify({"texto": texto, "html": texto_a_html(texto),
                         "generado_con_ia": False,
                         "warning": f"Falló la generación con IA ({e}); se usó la plantilla."})
