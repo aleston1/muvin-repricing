@@ -622,7 +622,8 @@ async function abrirWizard(raiz){
   if (!EQUIV) await cargarEquivalencias();
   FOTOS = [];
   document.getElementById('w-titulo-modal').textContent = 'Preparar publicación — ' + raiz;
-  document.getElementById('w-sub').textContent = W.nombre || '';
+  document.getElementById('w-sub').textContent = (W.nombre || '') +
+    (W.alt ? ' — Código fabricante: ' + W.alt : '');
   document.getElementById('w-precio').value = '10000000';
   document.getElementById('w-cantidad').value = Math.max(0, Math.floor(W.stock_total));
   document.getElementById('w-marca').value = (EQUIV && EQUIV.marcas && EQUIV.marcas[raiz]) || '';
@@ -677,7 +678,7 @@ async function abrirWizard(raiz){
   // Borrador: título + links de búsqueda de fotos
   try {
     const d = await api('/api/sync/draft', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({nombre: W.nombre, sku_raiz: raiz})});
+      body: JSON.stringify({nombre: W.nombre, sku_raiz: raiz, alt: W.alt || ''})});
     document.getElementById('w-titulo').value = d.titulo;
     tituloCount();
     document.getElementById('ps-google').href = d.photo_search.google;
@@ -714,7 +715,7 @@ async function cargarFotosCandidatas(){
   cont.innerHTML = '<span class="hint">Buscando candidatas en Mercado Libre…</span>';
   const q = document.getElementById('w-titulo').value || (W && W.nombre) || '';
   try {
-    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(q)}`);
+    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(q)}&alt=${encodeURIComponent(W.alt || '')}`);
     CANDIDATAS = d.fotos || [];
     if (!CANDIDATAS.length){
       cont.innerHTML = '<span class="hint">No se encontraron candidatas — usá los buscadores de abajo o pegá una URL.</span>';
@@ -771,6 +772,8 @@ async function generarDescripcion(){
         nombre: W.nombre,
         titulo: document.getElementById('w-titulo').value,
         sku_raiz: W.sku_raiz,
+        codigo: W.alt || W.sku_raiz,
+        alt: W.alt || '',
         datos: [
           document.getElementById('w-marca').value.trim() ? 'Marca: ' + document.getElementById('w-marca').value.trim() : '',
           document.getElementById('w-datos').value,
@@ -832,10 +835,12 @@ function validarComun(){
   return null;
 }
 function descConCodigo(){
-  // Garantiza la línea final "Código: SKU" aunque la descripción sea manual
+  // Garantiza la línea final "Código: X" (código alternativo de Hansa si
+  // existe; si no, el SKU raíz) aunque la descripción sea manual
+  const codigo = W.alt || W.sku_raiz;
   let d = document.getElementById('w-desc').value.trim();
-  if (d && !new RegExp('C[óo]digo:\\s*' + W.sku_raiz, 'i').test(d)){
-    d += '\n\nCódigo: ' + W.sku_raiz;
+  if (d && !/C[óo]digo:\s*\S/i.test(d)){
+    d += '\n\nCódigo: ' + codigo;
   }
   return d;
 }
@@ -867,6 +872,7 @@ async function publicarML(){
   const marca = document.getElementById('w-marca').value.trim();
   const attrsItem = [];
   if (marca) attrsItem.push({id:'BRAND', value_name: marca});
+  if (W.alt) attrsItem.push({id:'MPN', value_name: W.alt});
   if (vars.length){
     item.variations = vars.map(v=>({
       price: precio,

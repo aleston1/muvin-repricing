@@ -238,6 +238,63 @@ def parse_stock_rows(rows):
     return productos
 
 
+def limpiar_codigo(v):
+    """'2027.0' -> '2027' (números que la planilla formatea como float)."""
+    s = str(v or "").strip()
+    if s.endswith(".0") and s[:-2].replace(".", "", 1).isdigit():
+        s = s[:-2]
+    return s
+
+
+def parse_maestro_alt(rows):
+    """Solapa 'Maestro Items' -> {SKU: código alternativo}."""
+    alt, idx_alt = {}, None
+    for row in rows:
+        vals = [str(c).strip() if c is not None else "" for c in row]
+        if idx_alt is None:
+            if "Código Alternativo" in vals:
+                idx_alt = vals.index("Código Alternativo")
+            continue
+        cod = vals[0] if vals else ""
+        a = vals[idx_alt] if len(vals) > idx_alt else ""
+        if cod and a:
+            alt[cod.upper()] = limpiar_codigo(a)
+    return alt
+
+
+def aplicar_alt(productos, alt_map):
+    """Agrega el código alternativo a cada producto y variante."""
+    for p in productos.values():
+        for v in p["variantes"]:
+            v["alt"] = alt_map.get(v["sku"].upper(), "")
+        p["alt"] = alt_map.get(p["sku_raiz"], "") or next(
+            (v["alt"] for v in p["variantes"] if v.get("alt")), "")
+    return productos
+
+
+def fetch_stock_xlsx(sheet_id):
+    """Baja el workbook completo: solapa Stock + Maestro Items (alt codes)."""
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+    r = requests.get(url, timeout=60, allow_redirects=True)
+    if r.status_code != 200 or "text/html" in r.headers.get("content-type", ""):
+        raise RuntimeError(
+            "No se pudo leer la planilla. Verificá que esté compartida como "
+            "'Cualquier persona con el enlace: Lector', o subí el archivo manualmente."
+        )
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(r.content), read_only=True, data_only=True)
+    stock_rows, alt_map = None, {}
+    for ws in wb.worksheets:
+        titulo = ws.title.strip().lower()
+        if titulo == "stock" or (stock_rows is None and "stock" in titulo):
+            stock_rows = [list(row) for row in ws.iter_rows(values_only=True)]
+        elif "maestro" in titulo:
+            alt_map = parse_maestro_alt(ws.iter_rows(values_only=True))
+    if stock_rows is None:
+        stock_rows = [list(row) for row in wb.worksheets[0].iter_rows(values_only=True)]
+    return stock_rows, alt_map
+
+
 def fetch_stock_sheet(sheet_id, gid):
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     r = requests.get(url, timeout=30, allow_redirects=True)
@@ -256,8 +313,11 @@ def get_stock():
     sheet_id = request.args.get("sheet_id", SHEET_ID)
     gid      = request.args.get("gid", SHEET_GID)
     try:
-        rows = fetch_stock_sheet(sheet_id, gid)
-        productos = parse_stock_rows(rows)
+        try:
+            rows, alt_map = fetch_stock_xlsx(sheet_id)
+        except Exception:
+            rows, alt_map = fetch_stock_sheet(sheet_id, gid), {}
+        productos = aplicar_alt(parse_stock_rows(rows), alt_map)
         try:
             with open(STOCK_CACHE_PATH, "w") as f:
                 json.dump(productos, f)
@@ -282,14 +342,18 @@ def upload_stock():
     f = request.files["file"]
     try:
         name = (f.filename or "").lower()
+        alt_map = {}
         if name.endswith(".xlsx"):
             import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(f.read()), read_only=True)
-            rows = [list(r) for r in wb.active.iter_rows(values_only=True)]
+            wb = openpyxl.load_workbook(io.BytesIO(f.read()), read_only=True, data_only=True)
+            rows = [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
+            for ws in wb.worksheets:
+                if "maestro" in ws.title.strip().lower():
+                    alt_map = parse_maestro_alt(ws.iter_rows(values_only=True))
         else:
             text = f.read().decode("utf-8-sig", errors="replace")
             rows = list(csv.reader(io.StringIO(text)))
-        productos = parse_stock_rows(rows)
+        productos = aplicar_alt(parse_stock_rows(rows), alt_map)
         try:
             with open(STOCK_CACHE_PATH, "w") as cf:
                 json.dump(productos, cf)
@@ -610,12 +674,20 @@ def buscar_fotos():
     del mismo producto. El humano elige cuáles usar en el wizard."""
     token = request.args.get("token", os.environ.get("ML_TOKEN", ""))
     q     = request.args.get("q", "")
+    alt   = request.args.get("alt", "").strip()  # código del fabricante
     if not q:
         return jsonify({"error": "Falta q"}), 400
     fotos, vistos = [], set()
     try:
-        data    = ml_get("/sites/MLA/search", token, {"q": q, "limit": 6})
-        results = data.get("results", [])
+        results = []
+        ids_vistos = set()
+        # El código del fabricante primero: suele dar el producto exacto
+        for consulta in ([alt] if alt else []) + [q]:
+            data = ml_get("/sites/MLA/search", token, {"q": consulta, "limit": 6})
+            for r in data.get("results", []):
+                if r.get("id") not in ids_vistos:
+                    ids_vistos.add(r.get("id"))
+                    results.append(r)
         # Primero las fotos del catálogo oficial de ML (las más seguras de usar)
         for r in results:
             cpid = r.get("catalog_product_id")
@@ -837,8 +909,9 @@ def titulo_desde_nombre(nombre):
 def draft():
     body   = request.json or {}
     nombre = body.get("nombre", "")
+    alt    = (body.get("alt") or "").strip()  # código del fabricante (Hansa)
     titulo = titulo_desde_nombre(nombre)
-    q = urllib.parse.quote_plus(titulo or nombre)
+    q = urllib.parse.quote_plus(((titulo or nombre) + (" " + alt if alt else "")).strip())
     return jsonify({
         "titulo": titulo,
         "photo_search": {
@@ -938,7 +1011,8 @@ def describe():
     nombre  = body.get("nombre", "")
     titulo  = body.get("titulo") or titulo_desde_nombre(nombre)
     datos   = body.get("datos", "")  # specs/notas extra que cargue el usuario
-    sku     = (body.get("sku_raiz") or "").strip()
+    alt     = (body.get("alt") or "").strip()  # código del fabricante
+    sku     = (body.get("codigo") or body.get("sku_raiz") or "").strip()
     api_key = body.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
 
     if not api_key:
@@ -951,6 +1025,8 @@ def describe():
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
         contenido = f"Nombre interno del producto (ERP): {nombre}\nTítulo de la publicación: {titulo}"
+        if alt:
+            contenido += f"\nCódigo del fabricante (MPN): {alt} — te ayuda a identificar el modelo exacto, pero no inventes specs que no conozcas con certeza."
         if datos:
             contenido += f"\nDatos y especificaciones adicionales:\n{datos}"
         resp = client.messages.create(
