@@ -770,6 +770,7 @@ async function generarDescripcion(){
       body: JSON.stringify({
         nombre: W.nombre,
         titulo: document.getElementById('w-titulo').value,
+        sku_raiz: W.sku_raiz,
         datos: [
           document.getElementById('w-marca').value.trim() ? 'Marca: ' + document.getElementById('w-marca').value.trim() : '',
           document.getElementById('w-datos').value,
@@ -830,6 +831,14 @@ function validarComun(){
   if (!document.getElementById('w-desc').value.trim()) return 'Falta la descripción (podés generarla con el botón).';
   return null;
 }
+function descConCodigo(){
+  // Garantiza la línea final "Código: SKU" aunque la descripción sea manual
+  let d = document.getElementById('w-desc').value.trim();
+  if (d && !new RegExp('C[óo]digo:\\s*' + W.sku_raiz, 'i').test(d)){
+    d += '\n\nCódigo: ' + W.sku_raiz;
+  }
+  return d;
+}
 function mostrarResultado(ok, msg){
   const el = document.getElementById('w-result');
   el.className = 'result-box ' + (ok ? 'result-ok' : 'result-err');
@@ -879,7 +888,7 @@ async function publicarML(){
   btn.disabled = true; btn.textContent = 'Publicando...';
   try {
     const d = await api('/api/sync/publish/ml', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({token: cfg('cfg-ml-token'), item, descripcion: document.getElementById('w-desc').value})});
+      body: JSON.stringify({token: cfg('cfg-ml-token'), item, descripcion: descConCodigo()})});
     let msg = `✓ Publicado en Mercado Libre: <a href="${d.permalink}" target="_blank" rel="noopener">${d.id}</a>`;
     if (d.warning) msg += `<br>⚠ ${escapeHtml(d.warning)}`;
     mostrarResultado(true, msg);
@@ -916,7 +925,7 @@ async function publicarTN(){
 
   const product = {
     name: {es: document.getElementById('w-titulo').value.trim()},
-    description: {es: textoAHtml(document.getElementById('w-desc').value)},
+    description: {es: textoAHtml(descConCodigo())},
     images: FOTOS.map(u=>({src:u})),
     published: document.getElementById('w-tn-pub').value === 'true',
   };
