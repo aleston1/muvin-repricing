@@ -294,7 +294,24 @@ def parse_maestro_alt(rows):
     return maestro
 
 
-def aplicar_alt(productos, maestro):
+def parse_precios_retail(rows):
+    """Solapa 'Precios retail' (Item | Nombre | Unidad | IVA Incl.) ->
+    {SKU raíz: precio de venta con IVA}."""
+    precios, idx_precio = {}, None
+    for row in rows:
+        vals = [str(c).strip() if c is not None else "" for c in row]
+        if idx_precio is None:
+            if any("iva" in v.lower() for v in vals):
+                idx_precio = next(i for i, v in enumerate(vals) if "iva" in v.lower())
+            continue
+        cod = vals[0] if vals else ""
+        p = parse_num(vals[idx_precio]) if len(vals) > idx_precio else 0
+        if cod and p > 0:
+            precios[cod.upper()] = p
+    return precios
+
+
+def aplicar_alt(productos, maestro, precios=None):
     """Vuelca los datos del Maestro (alt, grupos, vínculos ML/TN) en cada
     producto y variante."""
     for p in productos.values():
@@ -313,7 +330,9 @@ def aplicar_alt(productos, maestro):
         p["grupos"] = sorted(grupos)
         p["ml_ids_hansa"] = sorted(ml_ids)
         p["tn_id_hansa"] = tn_id or raiz.get("tn_id", "")
-        p["precio"] = raiz.get("precio") or max(
+        # Precio: primero la lista retail (por SKU raíz — las variantes
+        # comparten precio), después alguna columna de precio del Maestro
+        p["precio"] = (precios or {}).get(p["sku_raiz"], 0) or raiz.get("precio") or max(
             (maestro.get(v["sku"].upper(), {}).get("precio", 0) for v in p["variantes"]),
             default=0)
     return productos
@@ -330,16 +349,18 @@ def fetch_stock_xlsx(sheet_id):
         )
     import openpyxl
     wb = openpyxl.load_workbook(io.BytesIO(r.content), read_only=True, data_only=True)
-    stock_rows, alt_map = None, {}
+    stock_rows, alt_map, precios = None, {}, {}
     for ws in wb.worksheets:
         titulo = ws.title.strip().lower()
         if titulo == "stock" or (stock_rows is None and "stock" in titulo):
             stock_rows = [list(row) for row in ws.iter_rows(values_only=True)]
         elif "maestro" in titulo:
             alt_map = parse_maestro_alt(ws.iter_rows(values_only=True))
+        elif "precio" in titulo:
+            precios = parse_precios_retail(ws.iter_rows(values_only=True))
     if stock_rows is None:
         stock_rows = [list(row) for row in wb.worksheets[0].iter_rows(values_only=True)]
-    return stock_rows, alt_map
+    return stock_rows, alt_map, precios
 
 
 def fetch_stock_sheet(sheet_id, gid):
@@ -361,10 +382,10 @@ def get_stock():
     gid      = request.args.get("gid", SHEET_GID)
     try:
         try:
-            rows, alt_map = fetch_stock_xlsx(sheet_id)
+            rows, alt_map, precios = fetch_stock_xlsx(sheet_id)
         except Exception:
-            rows, alt_map = fetch_stock_sheet(sheet_id, gid), {}
-        productos = aplicar_alt(parse_stock_rows(rows), alt_map)
+            rows, alt_map, precios = fetch_stock_sheet(sheet_id, gid), {}, {}
+        productos = aplicar_alt(parse_stock_rows(rows), alt_map, precios)
         try:
             with open(STOCK_CACHE_PATH, "w") as f:
                 json.dump(productos, f)
@@ -389,18 +410,21 @@ def upload_stock():
     f = request.files["file"]
     try:
         name = (f.filename or "").lower()
-        alt_map = {}
+        alt_map, precios = {}, {}
         if name.endswith(".xlsx"):
             import openpyxl
             wb = openpyxl.load_workbook(io.BytesIO(f.read()), read_only=True, data_only=True)
             rows = [list(r) for r in wb.worksheets[0].iter_rows(values_only=True)]
             for ws in wb.worksheets:
-                if "maestro" in ws.title.strip().lower():
+                titulo = ws.title.strip().lower()
+                if "maestro" in titulo:
                     alt_map = parse_maestro_alt(ws.iter_rows(values_only=True))
+                elif "precio" in titulo:
+                    precios = parse_precios_retail(ws.iter_rows(values_only=True))
         else:
             text = f.read().decode("utf-8-sig", errors="replace")
             rows = list(csv.reader(io.StringIO(text)))
-        productos = aplicar_alt(parse_stock_rows(rows), alt_map)
+        productos = aplicar_alt(parse_stock_rows(rows), alt_map, precios)
         try:
             with open(STOCK_CACHE_PATH, "w") as cf:
                 json.dump(productos, cf)
@@ -809,6 +833,14 @@ def publish_ml():
 
     try:
         r = ml_post("/items", token, item)
+        # En el flujo de "familias" de ML, algunas categorías generan el
+        # título automáticamente y rechazan el campo title: reintentar sin él
+        if r.status_code == 400 and "title" in r.text and item.get("family_name"):
+            reintento = dict(item)
+            reintento.pop("title", None)
+            r2 = ml_post("/items", token, reintento)
+            if r2.status_code in (200, 201):
+                r = r2
     except requests.RequestException as e:
         return jsonify({"error": f"No se pudo contactar a Mercado Libre: {e}"}), 502
     if r.status_code not in (200, 201):
