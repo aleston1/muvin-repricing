@@ -421,6 +421,16 @@ function selAttr(id, val, conVacio){
     `<option value="${o}"${o===val?' selected':''}>${o||'—'}</option>`).join('') + '</select>';
 }
 function sinAcentos(s){ return s.normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function marcaDe(p){
+  // La marca es la clasificación Hansa de tipo MAR (Grupos Display)
+  if (EQUIV && EQUIV.clasificaciones && p.grupos){
+    for (const g of p.grupos){
+      const c = EQUIV.clasificaciones[g];
+      if (c && c.tipo === 'MAR') return c.nombre;
+    }
+  }
+  return (EQUIV && EQUIV.marcas && EQUIV.marcas[p.sku_raiz]) || '';
+}
 function categoriasTN(nombre){
   if (!EQUIV || !EQUIV.categorias_tn) return [];
   const seg = sinAcentos((nombre||'').split(' - ')[0].split(',')[0].trim().toLowerCase());
@@ -521,11 +531,21 @@ async function analizar(){
       progress('Sin credenciales de Tiendanube: se compara solo contra Mercado Libre.');
     }
 
-    ROWS = Object.values(STOCK).map(p => ({
-      ...p,
-      ml: ML[p.sku_raiz] || [],
-      tn: TN[p.sku_raiz] || [],
-    })).sort((a,b) => b.stock_total - a.stock_total);
+    ROWS = Object.values(STOCK).map(p => {
+      const ml = (ML[p.sku_raiz] || []).slice();
+      const tn = (TN[p.sku_raiz] || []).slice();
+      // Respaldo: los vínculos que Hansa ya tiene con cada plataforma
+      if (!ml.length && (p.ml_ids_hansa || []).length){
+        p.ml_ids_hansa.forEach(id => ml.push({
+          id, status: 'hansa',
+          permalink: 'https://articulo.mercadolibre.com.ar/' + id.replace(/^MLA/, 'MLA-'),
+        }));
+      }
+      if (!tn.length && p.tn_id_hansa){
+        tn.push({id: p.tn_id_hansa, url: '', published: true, hansa: true});
+      }
+      return {...p, ml, tn};
+    }).sort((a,b) => b.stock_total - a.stock_total);
 
     document.getElementById('stats').style.display = '';
     document.getElementById('filtros').style.display = '';
@@ -567,13 +587,13 @@ function render(){
     return;
   }
   tbody.innerHTML = rows.slice(0, 500).map(r => {
-    const ESTADOS_ML = {active:'activa', paused:'pausada', under_review:'en revisión', inactive:'incompleta'};
+    const ESTADOS_ML = {active:'activa', paused:'pausada', under_review:'en revisión', inactive:'incompleta', hansa:'vínculo Hansa'};
     const mlCell = r.ml.length
       ? r.ml.map(i=>`<a class="link-ml" href="${i.permalink||'#'}" target="_blank" rel="noopener">✓ ${ESTADOS_ML[i.status]||i.status}</a>`).join('<br>')
       : '<span class="badge badge-red">falta</span>';
     const tnCell = !tnDisponible ? '<span class="badge badge-gray">sin config</span>'
       : (r.tn.length
-        ? r.tn.map(p=>`<a class="link-tn" href="${p.url||'#'}" target="_blank" rel="noopener">✓ ${p.published?'visible':'oculto'}</a>`).join('<br>')
+        ? r.tn.map(p=>`<a class="link-tn" href="${p.url||'#'}" target="_blank" rel="noopener">✓ ${p.hansa?'vínculo Hansa':(p.published?'visible':'oculto')}</a>`).join('<br>')
         : '<span class="badge badge-red">falta</span>');
     const falta = !r.ml.length || (tnDisponible && !r.tn.length);
     return `<tr>
@@ -624,9 +644,9 @@ async function abrirWizard(raiz){
   document.getElementById('w-titulo-modal').textContent = 'Preparar publicación — ' + raiz;
   document.getElementById('w-sub').textContent = (W.nombre || '') +
     (W.alt ? ' — Código fabricante: ' + W.alt : '');
-  document.getElementById('w-precio').value = '10000000';
+  document.getElementById('w-precio').value = (W.precio && W.precio > 0) ? W.precio : '10000000';
   document.getElementById('w-cantidad').value = Math.max(0, Math.floor(W.stock_total));
-  document.getElementById('w-marca').value = (EQUIV && EQUIV.marcas && EQUIV.marcas[raiz]) || '';
+  document.getElementById('w-marca').value = marcaDe(W);
 
   // Categorías de Tiendanube según el tipo de producto (planilla de equivalencias)
   W._catsTN = categoriasTN(W.nombre);
@@ -772,7 +792,7 @@ async function generarDescripcion(){
         nombre: W.nombre,
         titulo: document.getElementById('w-titulo').value,
         sku_raiz: W.sku_raiz,
-        codigo: W.alt || W.sku_raiz,
+        codigo: W.alt || '',
         alt: W.alt || '',
         datos: [
           document.getElementById('w-marca').value.trim() ? 'Marca: ' + document.getElementById('w-marca').value.trim() : '',
@@ -835,12 +855,11 @@ function validarComun(){
   return null;
 }
 function descConCodigo(){
-  // Garantiza la línea final "Código: X" (código alternativo de Hansa si
-  // existe; si no, el SKU raíz) aunque la descripción sea manual
-  const codigo = W.alt || W.sku_raiz;
+  // Línea final "Código: <alternativo de Hansa>". Si el item no tiene
+  // código alternativo, no se agrega nada.
   let d = document.getElementById('w-desc').value.trim();
-  if (d && !/C[óo]digo:\s*\S/i.test(d)){
-    d += '\n\nCódigo: ' + codigo;
+  if (d && W.alt && !/C[óo]digo:\s*\S/i.test(d)){
+    d += '\n\nCódigo: ' + W.alt;
   }
   return d;
 }
