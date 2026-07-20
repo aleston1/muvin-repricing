@@ -834,13 +834,12 @@ def publish_ml():
     try:
         r = ml_post("/items", token, item)
         # En el flujo de "familias" de ML, algunas categorías generan el
-        # título automáticamente y rechazan el campo title: reintentar sin él
+        # título automáticamente y rechazan el campo title: reintentar sin él.
+        # Si el reintento también falla, se informa SU error (es el real).
         if r.status_code == 400 and "title" in r.text and item.get("family_name"):
             reintento = dict(item)
             reintento.pop("title", None)
-            r2 = ml_post("/items", token, reintento)
-            if r2.status_code in (200, 201):
-                r = r2
+            r = ml_post("/items", token, reintento)
     except requests.RequestException as e:
         return jsonify({"error": f"No se pudo contactar a Mercado Libre: {e}"}), 502
     if r.status_code not in (200, 201):
