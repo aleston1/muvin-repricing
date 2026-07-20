@@ -247,28 +247,75 @@ def limpiar_codigo(v):
 
 
 def parse_maestro_alt(rows):
-    """Solapa 'Maestro Items' -> {SKU: código alternativo}."""
-    alt, idx_alt = {}, None
+    """Solapa 'Maestro Items' -> {SKU: {alt, grupos, ml_ids, tn_id}}.
+
+    alt = Código Alternativo (código del fabricante); grupos = códigos de
+    clasificación (Grupos Display); ml_ids / tn_id = vínculos que Hansa ya
+    tiene con las publicaciones de cada plataforma.
+    """
+    maestro, idx = {}, None
     for row in rows:
         vals = [str(c).strip() if c is not None else "" for c in row]
-        if idx_alt is None:
+        if idx is None:
             if "Código Alternativo" in vals:
-                idx_alt = vals.index("Código Alternativo")
+                idx = {
+                    "alt": vals.index("Código Alternativo"),
+                    "grupos": vals.index("Grupos Display") if "Grupos Display" in vals else None,
+                    "ml": vals.index("ML IDs") if "ML IDs" in vals else None,
+                    "tn": vals.index("TN ID") if "TN ID" in vals else None,
+                    # Lista de precios de venta (ej: "Precio Lista 1") si la
+                    # planilla la incorpora; el Precio Costo no cuenta
+                    "precio": next((i for i, v in enumerate(vals)
+                                    if v.lower().startswith("precio")
+                                    and "costo" not in v.lower()), None),
+                }
             continue
         cod = vals[0] if vals else ""
-        a = vals[idx_alt] if len(vals) > idx_alt else ""
-        if cod and a:
-            alt[cod.upper()] = limpiar_codigo(a)
-    return alt
+        if not cod:
+            continue
+
+        def celda(i):
+            return vals[i] if i is not None and len(vals) > i else ""
+
+        ml_ids = [x.strip() for x in celda(idx["ml"]).split(",")
+                  if x.strip().upper().startswith("MLA")]
+        tn_raw = celda(idx["tn"])
+        tn_id = ""
+        if tn_raw.upper().startswith("OK"):
+            digitos = re.sub(r"\D", "", tn_raw)
+            tn_id = digitos or "ok"
+        maestro[cod.upper()] = {
+            "alt": limpiar_codigo(celda(idx["alt"])),
+            "grupos": [g.strip().upper() for g in celda(idx["grupos"]).split(",") if g.strip()],
+            "ml_ids": ml_ids,
+            "tn_id": tn_id,
+            "precio": parse_num(celda(idx["precio"])),
+        }
+    return maestro
 
 
-def aplicar_alt(productos, alt_map):
-    """Agrega el código alternativo a cada producto y variante."""
+def aplicar_alt(productos, maestro):
+    """Vuelca los datos del Maestro (alt, grupos, vínculos ML/TN) en cada
+    producto y variante."""
     for p in productos.values():
+        grupos, ml_ids, tn_id = set(), set(), ""
         for v in p["variantes"]:
-            v["alt"] = alt_map.get(v["sku"].upper(), "")
-        p["alt"] = alt_map.get(p["sku_raiz"], "") or next(
+            m = maestro.get(v["sku"].upper()) or {}
+            v["alt"] = m.get("alt", "")
+            grupos.update(m.get("grupos") or [])
+            ml_ids.update(m.get("ml_ids") or [])
+            tn_id = tn_id or m.get("tn_id", "")
+        raiz = maestro.get(p["sku_raiz"]) or {}
+        grupos.update(raiz.get("grupos") or [])
+        ml_ids.update(raiz.get("ml_ids") or [])
+        p["alt"] = raiz.get("alt", "") or next(
             (v["alt"] for v in p["variantes"] if v.get("alt")), "")
+        p["grupos"] = sorted(grupos)
+        p["ml_ids_hansa"] = sorted(ml_ids)
+        p["tn_id_hansa"] = tn_id or raiz.get("tn_id", "")
+        p["precio"] = raiz.get("precio") or max(
+            (maestro.get(v["sku"].upper(), {}).get("precio", 0) for v in p["variantes"]),
+            default=0)
     return productos
 
 
@@ -441,6 +488,17 @@ def equivalencias():
                 sku_madre, marca = _celda(row, 1), _celda(row, 7)
                 if sku_madre and marca:
                     data["marcas"][sku_madre.upper()] = marca
+
+        # Clasificaciones Hansa (código -> nombre y tipo; tipo MAR = marca)
+        data["clasificaciones"] = {}
+        ws = hoja("clasificaciones")
+        if ws:
+            for row in list(ws.iter_rows(values_only=True))[1:]:
+                cod = _celda(row, 0)
+                if cod:
+                    data["clasificaciones"][cod.upper()] = {
+                        "nombre": _celda(row, 1) or cod, "tipo": _celda(row, 2).upper(),
+                    }
 
         ws = hoja("slugs")
         if ws:
@@ -998,10 +1056,11 @@ def texto_a_html(texto):
     return "".join(html_partes)
 
 
-def con_codigo(texto, sku):
-    """Asegura la línea final 'Código: SKU' sin duplicarla."""
-    if sku and not re.search(r"C[óo]digo:\s*" + re.escape(sku), texto, re.I):
-        texto = texto.rstrip() + f"\n\nCódigo: {sku}"
+def con_codigo(texto, codigo):
+    """Asegura la línea final 'Código: <alternativo>'. Si el item no tiene
+    código alternativo no se agrega nada."""
+    if codigo and not re.search(r"C[óo]digo:\s*\S", texto, re.I):
+        texto = texto.rstrip() + f"\n\nCódigo: {codigo}"
     return texto
 
 
@@ -1012,7 +1071,7 @@ def describe():
     titulo  = body.get("titulo") or titulo_desde_nombre(nombre)
     datos   = body.get("datos", "")  # specs/notas extra que cargue el usuario
     alt     = (body.get("alt") or "").strip()  # código del fabricante
-    sku     = (body.get("codigo") or body.get("sku_raiz") or "").strip()
+    sku     = (body.get("codigo") or "").strip()  # vacío => sin línea Código
     api_key = body.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
 
     if not api_key:
