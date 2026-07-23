@@ -194,6 +194,13 @@
           </select>
         </div>
       </div>
+      <div class="w-row">
+        <div><label>Peso paquete (g)</label><input type="number" id="w-peso" min="1" step="1" value="1000"></div>
+        <div><label>Largo (cm)</label><input type="number" id="w-largo" min="1" step="0.1" value="30"></div>
+        <div><label>Ancho (cm)</label><input type="number" id="w-ancho" min="1" step="0.1" value="20"></div>
+        <div><label>Alto (cm)</label><input type="number" id="w-alto" min="1" step="0.1" value="15"></div>
+      </div>
+      <div class="hint">Dimensiones del paquete para el envío (ML las exige en varias categorías). Ajustá los valores por defecto según el producto.</div>
     </div>
 
     <div class="w-section" id="w-var-section" style="display:none">
@@ -891,7 +898,22 @@ async function publicarML(){
   const marca = document.getElementById('w-marca').value.trim();
   const attrsItem = [];
   if (marca) attrsItem.push({id:'BRAND', value_name: marca});
-  if (W.alt) attrsItem.push({id:'MPN', value_name: W.alt});
+  if (W.alt){
+    attrsItem.push({id:'MPN', value_name: W.alt});
+    attrsItem.push({id:'MODEL', value_name: W.alt});
+  }
+  // Impuestos (obligatorios en varias categorías; valores estándar Argentina)
+  attrsItem.push({id:'VALUE_ADDED_TAX', value_name:'21 %'});
+  attrsItem.push({id:'IMPORT_DUTY', value_name:'0 %'});
+  // Dimensiones del paquete de envío (obligatorias en varias categorías)
+  const peso  = parseInt(document.getElementById('w-peso').value) || 1000;
+  const largo = parseFloat(document.getElementById('w-largo').value) || 30;
+  const ancho = parseFloat(document.getElementById('w-ancho').value) || 20;
+  const alto  = parseFloat(document.getElementById('w-alto').value) || 15;
+  attrsItem.push({id:'SELLER_PACKAGE_WEIGHT', value_name: peso + ' g'});
+  attrsItem.push({id:'SELLER_PACKAGE_LENGTH', value_name: largo + ' cm'});
+  attrsItem.push({id:'SELLER_PACKAGE_WIDTH',  value_name: ancho + ' cm'});
+  attrsItem.push({id:'SELLER_PACKAGE_HEIGHT', value_name: alto + ' cm'});
   if (vars.length){
     item.variations = vars.map(v=>({
       price: precio,
