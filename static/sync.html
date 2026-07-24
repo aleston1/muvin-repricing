@@ -768,7 +768,8 @@ async function cargarFotosCandidatas(){
   cont.innerHTML = '<span class="hint">Buscando candidatas en Mercado Libre…</span>';
   const q = document.getElementById('w-titulo').value || (W && W.nombre) || '';
   try {
-    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(q)}&alt=${encodeURIComponent(W.alt || '')}`);
+    const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[W.sku_raiz] && EQUIV.slugs[W.sku_raiz].url) || '';
+    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(q)}&alt=${encodeURIComponent(W.alt || '')}&slug_url=${encodeURIComponent(slugUrl)}`);
     CANDIDATAS = d.fotos || [];
     if (!CANDIDATAS.length){
       cont.innerHTML = '<span class="hint">No se encontraron candidatas — usá los buscadores de abajo o pegá una URL.</span>';
@@ -783,8 +784,12 @@ function renderCandidatas(){
   const cont = document.getElementById('w-fotos-cand');
   cont.innerHTML = CANDIDATAS.map((f,i)=>{
     const usada = FOTOS.includes(f.url);
-    return `<div class="foto foto-cand${usada?' usada':''}" title="${escapeHtml(f.fuente)}" onclick="usarCandidata(${i})">
+    const etiqueta = f.size
+      ? `<div class="ppal" style="background:${f.chica?'rgba(192,57,43,.8)':'rgba(30,126,52,.8)'}">${f.size}</div>`
+      : '';
+    return `<div class="foto foto-cand${usada?' usada':''}" title="${escapeHtml(f.fuente)}${f.chica?' — chica, puede verse pixelada':''}" onclick="usarCandidata(${i})">
       <img src="${escapeHtml(f.url)}" onerror="this.parentElement.style.display='none'" alt="">
+      ${etiqueta}
     </div>`;
   }).join('');
 }

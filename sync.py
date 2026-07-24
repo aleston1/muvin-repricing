@@ -831,27 +831,76 @@ def _sugerir_valor(attr_id, valores):
     return ""
 
 
+MIN_FOTO_PX = 500  # ancho mínimo aceptable para no publicar imágenes chicas
+
+
+def _foto_ml(p):
+    """De un objeto picture de ML devuelve (url_máxima, (ancho, alto))."""
+    url = p.get("secure_url") or p.get("url") or ""
+    # La URL trae un sufijo de tamaño antes de la extensión (-O original,
+    # -F, -V, -W...). Forzamos -O para la resolución original.
+    url_max = re.sub(r"-[A-Z]\.(jpg|jpeg|png|webp)(\?.*)?$", r"-O.\1", url, flags=re.I)
+    dim = p.get("max_size") or p.get("size") or ""
+    m = re.match(r"(\d+)\s*x\s*(\d+)", str(dim))
+    wh = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+    return url_max or url, wh
+
+
+def _og_image(url):
+    """Imagen principal (og:image) de una página del fabricante."""
+    try:
+        r = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=15)
+        r.raise_for_status()
+        html = r.text[:200000]
+        for pat in (r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+                    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image',
+                    r'<link[^>]+rel=["\']image_src["\'][^>]+href=["\']([^"\']+)'):
+            m = re.search(pat, html, re.I)
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return None
+
+
 @sync_bp.route("/fotos")
 def buscar_fotos():
-    """Candidatas de fotos: catálogo oficial de ML + publicaciones existentes
-    del mismo producto. El humano elige cuáles usar en el wizard."""
-    token = request.args.get("token", os.environ.get("ML_TOKEN", ""))
-    q     = request.args.get("q", "")
-    alt   = request.args.get("alt", "").strip()  # código del fabricante
+    """Candidatas de fotos en máxima resolución: página del fabricante +
+    catálogo oficial de ML + publicaciones existentes. Descarta las chicas."""
+    token    = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    q        = request.args.get("q", "")
+    alt      = request.args.get("alt", "").strip()      # código del fabricante
+    slug_url = request.args.get("slug_url", "").strip()  # página del fabricante
     if not q:
         return jsonify({"error": "Falta q"}), 400
     fotos, vistos = [], set()
+
+    def agregar(url, wh, fuente):
+        if not url or url in vistos:
+            return
+        vistos.add(url)
+        ancho = wh[0] if wh else 0
+        # Descartar las claramente chicas (salvo que no sepamos el tamaño)
+        if ancho and ancho < MIN_FOTO_PX:
+            return
+        fotos.append({"url": url, "size": (f"{wh[0]}x{wh[1]}" if ancho else ""),
+                      "chica": bool(ancho and ancho < 900), "fuente": fuente})
+
     try:
-        results = []
-        ids_vistos = set()
-        # El código del fabricante primero: suele dar el producto exacto
+        # 1) Imagen de la página del fabricante (suele ser la de mejor calidad)
+        if slug_url:
+            og = _og_image(slug_url)
+            if og:
+                agregar(og, (0, 0), "Página del fabricante")
+
+        results, ids_vistos = [], set()
         for consulta in ([alt] if alt else []) + [q]:
             data = ml_get("/sites/MLA/search", token, {"q": consulta, "limit": 6})
             for r in data.get("results", []):
                 if r.get("id") not in ids_vistos:
                     ids_vistos.add(r.get("id"))
                     results.append(r)
-        # Primero las fotos del catálogo oficial de ML (las más seguras de usar)
+        # 2) Catálogo oficial de ML
         for r in results:
             cpid = r.get("catalog_product_id")
             if not cpid or cpid in vistos:
@@ -860,13 +909,11 @@ def buscar_fotos():
             try:
                 prod = ml_get(f"/products/{cpid}", token)
                 for p in (prod.get("pictures") or [])[:4]:
-                    u = p.get("url")
-                    if u and u not in vistos:
-                        vistos.add(u)
-                        fotos.append({"url": u, "fuente": "Catálogo ML — " + (prod.get("name") or "")})
+                    url, wh = _foto_ml(p)
+                    agregar(url, wh, "Catálogo ML — " + (prod.get("name") or ""))
             except Exception:
                 pass
-        # Después las de publicaciones existentes
+        # 3) Publicaciones existentes
         ids = [r["id"] for r in results if r.get("id")][:6]
         if ids:
             details = ml_get("/items", token, {"ids": ",".join(ids), "attributes": "id,title,pictures"})
@@ -875,10 +922,10 @@ def buscar_fotos():
                     continue
                 it = x["body"]
                 for p in (it.get("pictures") or [])[:3]:
-                    u = p.get("secure_url") or p.get("url")
-                    if u and u not in vistos:
-                        vistos.add(u)
-                        fotos.append({"url": u, "fuente": it.get("title") or ""})
+                    url, wh = _foto_ml(p)
+                    agregar(url, wh, it.get("title") or "")
+        # Las más grandes primero
+        fotos.sort(key=lambda f: f["chica"])
         return jsonify({"fotos": fotos[:16]})
     except Exception as e:
         return jsonify({"fotos": [], "error": str(e)})
