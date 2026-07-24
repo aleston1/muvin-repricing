@@ -444,6 +444,16 @@ function marcaDe(p){
   }
   return (EQUIV && EQUIV.marcas && EQUIV.marcas[p.sku_raiz]) || '';
 }
+function dimDe(p){
+  // Peso y dimensiones salen de la clasificación de tipo PROD del producto
+  if (EQUIV && EQUIV.clasificaciones && p.grupos){
+    for (const g of p.grupos){
+      const c = EQUIV.clasificaciones[g];
+      if (c && c.tipo === 'PROD' && c.dim) return c.dim;
+    }
+  }
+  return null;
+}
 function categoriasTN(nombre){
   if (!EQUIV || !EQUIV.categorias_tn) return [];
   const seg = sinAcentos((nombre||'').split(' - ')[0].split(',')[0].trim().toLowerCase());
@@ -661,6 +671,15 @@ async function abrirWizard(raiz){
   document.getElementById('w-precio').value = (W.precio && W.precio > 0) ? W.precio : '10000000';
   document.getElementById('w-cantidad').value = Math.max(0, Math.floor(W.stock_total));
   document.getElementById('w-marca').value = marcaDe(W);
+  // Peso y dimensiones del paquete (clasificación PROD); si no hay, quedan
+  // los valores por defecto de los campos
+  const dim = dimDe(W);
+  if (dim){
+    if (dim.peso_kg)  document.getElementById('w-peso').value  = Math.round(dim.peso_kg * 1000);
+    if (dim.largo)    document.getElementById('w-largo').value = dim.largo;
+    if (dim.ancho)    document.getElementById('w-ancho').value = dim.ancho;
+    if (dim.alto)     document.getElementById('w-alto').value  = dim.alto;
+  }
 
   // Categorías de Tiendanube según el tipo de producto (planilla de equivalencias)
   W._catsTN = categoriasTN(W.nombre);
@@ -1029,12 +1048,21 @@ async function publicarTN(){
   const precio = parseFloat(document.getElementById('w-precio').value);
   const vars = variantesSeleccionadas();
 
+  const marca = document.getElementById('w-marca').value.trim();
+  // Peso (kg) y dimensiones (cm) para cada variante de TN
+  const envio = {
+    weight: String((parseInt(document.getElementById('w-peso').value) || 1000) / 1000),
+    depth:  String(parseFloat(document.getElementById('w-largo').value) || 30),
+    width:  String(parseFloat(document.getElementById('w-ancho').value) || 20),
+    height: String(parseFloat(document.getElementById('w-alto').value)  || 15),
+  };
   const product = {
     name: {es: document.getElementById('w-titulo').value.trim()},
     description: {es: textoAHtml(descConCodigo())},
     images: FOTOS.map(u=>({src:u})),
     published: document.getElementById('w-tn-pub').value === 'true',
   };
+  if (marca) product.brand = marca;
   if (W._catsTN && W._catsTN.length) product.categories = W._catsTN.map(c=>c.id);
   if (vars.length){
     const attrs = [];
@@ -1044,6 +1072,7 @@ async function publicarTN(){
       price: String(precio),
       stock: Math.max(0, Math.floor(v.stock)),
       sku: v.sku,
+      ...envio,
       values: attrs.map(a => {
         const p = v.pares.find(x => x.atributo === a);
         return {es: p ? p.valor : '-'};
@@ -1054,6 +1083,7 @@ async function publicarTN(){
       price: String(precio),
       stock: parseInt(document.getElementById('w-cantidad').value) || 0,
       sku: W.sku_raiz,
+      ...envio,
     }];
   }
 

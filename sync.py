@@ -73,6 +73,24 @@ def descargar_imagen(url):
     return r.content, ct, ext
 
 
+def encuadrar_1740x1170(contenido):
+    """Encuadra la imagen en un lienzo 1740x1170 (proporción 3:2) con fondo
+    blanco, sin deformar. Es el tamaño estándar de las fotos de Tiendanube."""
+    try:
+        from PIL import Image
+        W, H = 1740, 1170
+        img = Image.open(io.BytesIO(contenido))
+        img = img.convert("RGB")
+        img.thumbnail((W, H), Image.LANCZOS)
+        lienzo = Image.new("RGB", (W, H), (255, 255, 255))
+        lienzo.paste(img, ((W - img.width) // 2, (H - img.height) // 2))
+        out = io.BytesIO()
+        lienzo.save(out, format="JPEG", quality=90)
+        return out.getvalue(), "image/jpeg", "jpg"
+    except Exception:
+        return None
+
+
 def ml_subir_foto(token, url):
     """Descarga la imagen y la sube al hosting de fotos de ML. Devuelve el
     picture id, o None si no se pudo (se usará la URL original)."""
@@ -513,16 +531,23 @@ def equivalencias():
                 if sku_madre and marca:
                     data["marcas"][sku_madre.upper()] = marca
 
-        # Clasificaciones Hansa (código -> nombre y tipo; tipo MAR = marca)
+        # Clasificaciones Hansa (código -> nombre, tipo y —para tipo PROD—
+        # peso y dimensiones del paquete de envío). tipo MAR = marca.
         data["clasificaciones"] = {}
         ws = hoja("clasificaciones")
         if ws:
             for row in list(ws.iter_rows(values_only=True))[1:]:
                 cod = _celda(row, 0)
-                if cod:
-                    data["clasificaciones"][cod.upper()] = {
-                        "nombre": _celda(row, 1) or cod, "tipo": _celda(row, 2).upper(),
-                    }
+                if not cod:
+                    continue
+                entry = {"nombre": _celda(row, 1) or cod, "tipo": _celda(row, 2).upper()}
+                peso  = parse_num(_celda(row, 3))
+                largo = parse_num(_celda(row, 4))
+                alto  = parse_num(_celda(row, 5))
+                ancho = parse_num(_celda(row, 6))
+                if peso or largo or alto or ancho:
+                    entry["dim"] = {"peso_kg": peso, "largo": largo, "alto": alto, "ancho": ancho}
+                data["clasificaciones"][cod.upper()] = entry
 
         ws = hoja("slugs")
         if ws:
@@ -1009,6 +1034,10 @@ def publish_tn():
         if u:
             try:
                 contenido, ct, ext = descargar_imagen(u)
+                # Encuadrar a 1740x1170 (estándar Muvin en Tiendanube)
+                encuadrada = encuadrar_1740x1170(contenido)
+                if encuadrada:
+                    contenido, ct, ext = encuadrada
                 nuevas.append({"attachment": base64.b64encode(contenido).decode(),
                                "filename": f"foto-{len(nuevas)+1}.{ext}"})
                 continue
