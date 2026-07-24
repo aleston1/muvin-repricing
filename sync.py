@@ -78,12 +78,15 @@ def encuadrar_1740x1170(contenido):
     blanco, sin deformar. Es el tamaño estándar de las fotos de Tiendanube."""
     try:
         from PIL import Image
-        W, H = 1740, 1170
-        img = Image.open(io.BytesIO(contenido))
-        img = img.convert("RGB")
-        img.thumbnail((W, H), Image.LANCZOS)
+        W, H, MARGEN = 1740, 1170, 0.92  # 8% de aire alrededor
+        img = Image.open(io.BytesIO(contenido)).convert("RGB")
+        # Escala para llenar el cuadro (agranda las chicas y achica las
+        # grandes) manteniendo la proporción
+        escala = min(W * MARGEN / img.width, H * MARGEN / img.height)
+        nw, nh = max(1, round(img.width * escala)), max(1, round(img.height * escala))
+        img = img.resize((nw, nh), Image.LANCZOS)
         lienzo = Image.new("RGB", (W, H), (255, 255, 255))
-        lienzo.paste(img, ((W - img.width) // 2, (H - img.height) // 2))
+        lienzo.paste(img, ((W - nw) // 2, (H - nh) // 2))
         out = io.BytesIO()
         lienzo.save(out, format="JPEG", quality=90)
         return out.getvalue(), "image/jpeg", "jpg"
