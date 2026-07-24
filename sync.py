@@ -1176,10 +1176,19 @@ Ejemplo del estilo (bicicleta Marin Four Corners):
 {ejemplo}
 ---
 
+Tenés acceso a búsqueda web. ANTES de escribir, investigá el producto real:
+- Buscá por marca + modelo + código de fabricante (MPN) en el sitio oficial \
+de la marca; si no, en tiendas o reseñas serias del rubro ciclismo.
+- Si te doy la URL de la página del producto, consultala.
+- Basá las especificaciones en la ficha técnica real que encuentres \
+(materiales, medidas, peso, compatibilidad, características, usos).
+
 Reglas estrictas:
-- NO inventes especificaciones técnicas que no estén en los datos provistos. \
-Si solo tenés el nombre, la marca y el color, la lista lleva solo eso.
-- No menciones precio, stock ni envío.
+- Usá SOLO datos que puedas verificar en las fuentes o que te haya dado el \
+usuario. Si no encontrás un dato, omitilo — NUNCA inventes specs.
+- Si no encontrás nada del producto, escribí una descripción general honesta \
+con lo que sí sabés, sin rellenar con datos inventados.
+- No menciones precio, stock ni envío. No cites las URLs en el texto final.
 - Respondé SOLO con el texto de la descripción, sin encabezados ni comentarios."""
 
 
@@ -1232,10 +1241,12 @@ def describe():
     body    = request.json or {}
     nombre  = body.get("nombre", "")
     titulo  = body.get("titulo") or titulo_desde_nombre(nombre)
-    datos   = body.get("datos", "")  # specs/notas extra que cargue el usuario
-    alt     = (body.get("alt") or "").strip()  # código del fabricante
-    sku     = (body.get("codigo") or "").strip()  # vacío => sin línea Código
-    api_key = body.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+    datos    = body.get("datos", "")  # specs/notas extra que cargue el usuario
+    alt      = (body.get("alt") or "").strip()   # código del fabricante
+    marca    = (body.get("marca") or "").strip()
+    slug_url = (body.get("slug_url") or "").strip()  # página del fabricante
+    sku      = (body.get("codigo") or "").strip()  # vacío => sin línea Código
+    api_key  = body.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
 
     if not api_key:
         texto = con_codigo(descripcion_plantilla(nombre, titulo), sku)
@@ -1247,17 +1258,39 @@ def describe():
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
         contenido = f"Nombre interno del producto (ERP): {nombre}\nTítulo de la publicación: {titulo}"
+        if marca:
+            contenido += f"\nMarca: {marca}"
         if alt:
-            contenido += f"\nCódigo del fabricante (MPN): {alt} — te ayuda a identificar el modelo exacto, pero no inventes specs que no conozcas con certeza."
+            contenido += f"\nCódigo del fabricante (MPN) para identificar el modelo exacto: {alt}"
+        if slug_url:
+            contenido += f"\nPágina oficial del producto (consultala): {slug_url}"
         if datos:
-            contenido += f"\nDatos y especificaciones adicionales:\n{datos}"
-        resp = client.messages.create(
-            model=os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8"),
-            max_tokens=2048,
-            system=PROMPT_SISTEMA.format(ejemplo=ESTILO_MUVIN),
-            messages=[{"role": "user", "content": contenido}],
-        )
-        texto = next((b.text for b in resp.content if b.type == "text"), "").strip()
+            contenido += f"\nDatos adicionales del usuario:\n{datos}"
+
+        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
+                 {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 3}]
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
+
+        def generar(tools_param):
+            mensajes = [{"role": "user", "content": contenido}]
+            for _ in range(6):  # continúa si el loop de web search se pausa
+                resp = client.messages.create(
+                    model=model, max_tokens=3000,
+                    system=PROMPT_SISTEMA.format(ejemplo=ESTILO_MUVIN),
+                    messages=mensajes, tools=tools_param)
+                if resp.stop_reason == "pause_turn":
+                    mensajes.append({"role": "assistant", "content": resp.content})
+                    continue
+                return resp
+            return resp
+
+        try:
+            resp = generar(tools)
+        except Exception:
+            resp = generar([])  # si la búsqueda web no está disponible, sin tools
+
+        texto = "\n".join(b.text for b in resp.content
+                          if getattr(b, "type", "") == "text").strip()
         if not texto:
             raise RuntimeError("La API no devolvió texto")
         texto = con_codigo(texto, sku)

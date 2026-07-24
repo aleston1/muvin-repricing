@@ -872,8 +872,10 @@ function atributosCategoria(){
 
 async function generarDescripcion(){
   const btn = document.getElementById('btn-describir');
-  btn.disabled = true; btn.textContent = 'Generando...';
+  btn.disabled = true; btn.textContent = 'Investigando el producto…';
+  document.getElementById('w-desc-hint').textContent = 'Buscando la ficha técnica real en la web (puede tardar ~30 seg)…';
   try {
+    const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[W.sku_raiz] && EQUIV.slugs[W.sku_raiz].url) || '';
     const d = await api('/api/sync/describe', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         nombre: W.nombre,
@@ -881,15 +883,14 @@ async function generarDescripcion(){
         sku_raiz: W.sku_raiz,
         codigo: W.alt || '',
         alt: W.alt || '',
-        datos: [
-          document.getElementById('w-marca').value.trim() ? 'Marca: ' + document.getElementById('w-marca').value.trim() : '',
-          document.getElementById('w-datos').value,
-        ].filter(Boolean).join('\n'),
+        marca: document.getElementById('w-marca').value.trim(),
+        slug_url: slugUrl,
+        datos: document.getElementById('w-datos').value,
         api_key: cfg('cfg-ai-key'),
       })});
     document.getElementById('w-desc').value = d.texto;
     document.getElementById('w-desc-hint').textContent = d.generado_con_ia
-      ? 'Generada con IA — revisala y editala antes de publicar.'
+      ? 'Generada con IA a partir de fuentes web — revisá que las specs sean correctas antes de publicar.'
       : (d.warning || 'Plantilla básica.');
   } catch(e){
     document.getElementById('w-desc-hint').textContent = '❌ '+e.message;
