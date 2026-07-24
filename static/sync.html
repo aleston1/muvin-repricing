@@ -177,7 +177,7 @@
       <div class="w-row">
         <div style="flex:2">
           <label>Categoría ML <button class="btn btn-sm" style="padding:2px 8px" onclick="predecirCategoria()">↻ Predecir</button></label>
-          <select id="w-categoria"></select>
+          <select id="w-categoria" onchange="cargarAtributosCategoria()"></select>
         </div>
         <div>
           <label>Tipo publicación ML</label>
@@ -201,6 +201,12 @@
         <div><label>Alto (cm)</label><input type="number" id="w-alto" min="1" step="0.1" value="15"></div>
       </div>
       <div class="hint">Dimensiones del paquete para el envío (ML las exige en varias categorías). Ajustá los valores por defecto según el producto.</div>
+    </div>
+
+    <div class="w-section" id="w-attrs-cat-section" style="display:none">
+      <h3>Datos requeridos por la categoría de Mercado Libre</h3>
+      <div class="w-row" id="w-attrs-cat"></div>
+      <div class="hint">Estos campos son obligatorios en la categoría elegida. Se completan una vez por producto.</div>
     </div>
 
     <div class="w-section" id="w-var-section" style="display:none">
@@ -642,6 +648,7 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<
 // ------------------------------------------------------------ wizard
 let W = null; // producto en edición
 let FOTOS = [];
+let ATTRS_CAT = []; // atributos obligatorios de la categoría ML elegida
 
 async function abrirWizard(raiz){
   W = ROWS.find(r => r.sku_raiz === raiz);
@@ -787,7 +794,56 @@ async function predecirCategoria(){
     } else {
       sel.innerHTML = '<option value="">Sin predicción — revisar manualmente</option>';
     }
+    cargarAtributosCategoria();
   } catch(e){ /* silencioso */ }
+}
+
+async function cargarAtributosCategoria(){
+  const cat = document.getElementById('w-categoria').value;
+  const cont = document.getElementById('w-attrs-cat');
+  const sec = document.getElementById('w-attrs-cat-section');
+  if (!cat){ sec.style.display = 'none'; cont.innerHTML = ''; return; }
+  cont.innerHTML = '<span class="hint">Consultando requisitos de la categoría…</span>';
+  sec.style.display = '';
+  try {
+    const d = await api(`/api/sync/ml/atributos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&category_id=${encodeURIComponent(cat)}&has_alt=${W.alt?'1':'0'}`);
+    if (!d.atributos || !d.atributos.length){ sec.style.display = 'none'; cont.innerHTML = ''; return; }
+    cont.innerHTML = d.atributos.map((a,i)=>{
+      const campo = a.valores && a.valores.length
+        ? `<select id="wa-cat-${i}">` +
+            `<option value="">— elegir —</option>` +
+            a.valores.map(v=>`<option value="${escapeHtml(v)}"${v===a.sugerido?' selected':''}>${escapeHtml(v)}</option>`).join('') +
+            (a.permite_otro?`<option value="__otro__">Otro (escribir)…</option>`:'') +
+          `</select>`
+        : `<input type="text" id="wa-cat-${i}" value="${escapeHtml(a.sugerido||'')}">`;
+      return `<div data-attr="${escapeHtml(a.id)}"><label>${escapeHtml(a.nombre)} *</label>${campo}
+        <input type="text" id="wa-cat-otro-${i}" placeholder="Especificar" style="display:none;margin-top:4px">
+      </div>`;
+    }).join('');
+    // Mostrar el input "otro" cuando corresponde
+    d.atributos.forEach((a,i)=>{
+      const sel = document.getElementById('wa-cat-'+i);
+      if (sel && sel.tagName === 'SELECT'){
+        sel.addEventListener('change', ()=>{
+          document.getElementById('wa-cat-otro-'+i).style.display = sel.value === '__otro__' ? '' : 'none';
+        });
+      }
+    });
+    ATTRS_CAT = d.atributos;
+  } catch(e){
+    cont.innerHTML = '<span class="hint">No se pudieron leer los requisitos de la categoría.</span>';
+  }
+}
+function atributosCategoria(){
+  const out = [];
+  (ATTRS_CAT||[]).forEach((a,i)=>{
+    const el = document.getElementById('wa-cat-'+i);
+    if (!el) return;
+    let val = el.value;
+    if (val === '__otro__') val = (document.getElementById('wa-cat-otro-'+i).value||'').trim();
+    if (val) out.push({id: a.id, value_name: val});
+  });
+  return out;
 }
 
 async function generarDescripcion(){
@@ -901,7 +957,10 @@ async function publicarML(){
   if (W.alt){
     attrsItem.push({id:'MPN', value_name: W.alt});
     attrsItem.push({id:'MODEL', value_name: W.alt});
+    attrsItem.push({id:'PART_NUMBER', value_name: W.alt});
   }
+  // Atributos obligatorios propios de la categoría (cargados en el wizard)
+  atributosCategoria().forEach(a => attrsItem.push(a));
   // Impuestos (obligatorios en varias categorías; valores estándar Argentina)
   attrsItem.push({id:'VALUE_ADDED_TAX', value_name:'21 %'});
   attrsItem.push({id:'IMPORT_DUTY', value_name:'0 %'});

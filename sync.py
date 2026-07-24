@@ -750,6 +750,59 @@ def ml_categoria():
         return jsonify({"predicciones": [], "error": str(e)})
 
 
+# Atributos que la app ya completa sola (marca, impuestos, paquete, SKU, MPN):
+# no hace falta pedírselos al usuario aunque la categoría los marque required.
+_ATTR_AUTOCOMPLETADOS = {
+    "BRAND", "SELLER_SKU", "MPN", "MODEL", "PART_NUMBER", "GTIN", "EMPTY_GTIN_REASON",
+    "VALUE_ADDED_TAX", "IMPORT_DUTY", "SELLER_PACKAGE_WEIGHT", "SELLER_PACKAGE_LENGTH",
+    "SELLER_PACKAGE_WIDTH", "SELLER_PACKAGE_HEIGHT", "COLOR", "SIZE",
+}
+
+
+@sync_bp.route("/ml/atributos")
+def ml_atributos():
+    """Atributos obligatorios de una categoría de ML que la app no completa
+    sola, para que el usuario los cargue en el wizard."""
+    token = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    cat   = request.args.get("category_id", "")
+    tiene_alt = request.args.get("has_alt", "1") != "0"
+    # Si el producto no tiene código alternativo, PART_NUMBER/MPN/MODEL no se
+    # autocompletan: hay que pedírselos al usuario
+    auto = set(_ATTR_AUTOCOMPLETADOS)
+    if not tiene_alt:
+        auto -= {"PART_NUMBER", "MPN", "MODEL"}
+    if not cat:
+        return jsonify({"atributos": []})
+    try:
+        data = ml_get(f"/categories/{cat}/attributes", token)
+        req = []
+        for a in data:
+            tags = a.get("tags") or {}
+            obligatorio = tags.get("required") or tags.get("catalog_required")
+            if not obligatorio or a.get("id") in auto:
+                continue
+            valores = [v.get("name") for v in (a.get("values") or []) if v.get("name")]
+            req.append({
+                "id": a.get("id"),
+                "nombre": a.get("name"),
+                "valores": valores[:60],           # lista para el desplegable
+                "permite_otro": tags.get("allow_variations") is None,
+                "sugerido": _sugerir_valor(a.get("id"), valores),
+            })
+        return jsonify({"atributos": req})
+    except Exception as e:
+        return jsonify({"atributos": [], "error": str(e)})
+
+
+def _sugerir_valor(attr_id, valores):
+    """Valor por defecto razonable para Muvin (tienda de bicis)."""
+    if attr_id == "VEHICLE_TYPE":
+        for v in valores:
+            if v.lower() == "bicicleta":
+                return v
+    return ""
+
+
 @sync_bp.route("/fotos")
 def buscar_fotos():
     """Candidatas de fotos: catálogo oficial de ML + publicaciones existentes
