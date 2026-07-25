@@ -701,10 +701,22 @@ def ml_debug():
     try:
         item = ml_get(f"/items/{item_id}", token, {"include_attributes": "all"})
         user_id = request.args.get("user_id", os.environ.get("ML_USER_ID", "246901020"))
+        # Motivo de baja / estado de salud (por qué ML la dio de baja)
+        salud = None
+        try:
+            salud = ml_get(f"/items/{item_id}/health", token)
+        except Exception:
+            pass
         return jsonify({
             "id": item.get("id"),
             "title": item.get("title"),
             "status": item.get("status"),
+            "sub_status": item.get("sub_status"),
+            "tags": item.get("tags"),
+            "health": item.get("health"),
+            "health_detalle": salud,
+            "catalog_listing": item.get("catalog_listing"),
+            "catalog_product_id": item.get("catalog_product_id"),
             "seller_id": item.get("seller_id"),
             "es_de_esta_cuenta": str(item.get("seller_id")) == str(user_id),
             "cuenta_configurada": user_id,
