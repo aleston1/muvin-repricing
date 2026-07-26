@@ -1015,31 +1015,63 @@ def buscar_fotos():
     except Exception as e:
         diag["ml_error"] = str(e)[:200]
 
-    # 4) Imágenes de la web (para productos de nicho)
-    try:
-        n0 = len(fotos)
-        # Consulta: marca + modelo (del nombre) + código de fabricante — lo
-        # más específico posible. Sacamos los rangos tipo "4/5/6" que ensucian.
-        modelo = re.sub(r"\d+\s*/\s*\d+(\s*/\s*\d+)*", "", q)
-        palabras, vis = [], set()
-        for w in (marca + " " + modelo + " " + alt).split():
-            wl = w.lower()
-            if wl not in vis:
-                vis.add(wl)
-                palabras.append(w)
-        consulta_web = re.sub(r"\s+", " ", " ".join(palabras)).strip()[:120]
-        urls, err = _imagenes_web(consulta_web, 20)
-        for u in urls:
-            agregar(u, (0, 0), "Web", "web")
-        diag["web"] = len(fotos) - n0
-        if err:
-            diag["web_error"] = err[:200]
-    except Exception as e:
-        diag["web_error"] = str(e)[:200]
-
-    orden = {"fabricante": 0, "catalogo": 1, "web": 2, "publicacion": 3}
-    fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 4)))
+    # (La búsqueda web genérica se movió al endpoint /fotos/ia, que usa la IA
+    # para encontrar las imágenes reales del producto — el raspado a lo bruto
+    # devolvía fotos genéricas irrelevantes.)
+    orden = {"fabricante": 0, "catalogo": 1, "publicacion": 2}
+    fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 3)))
     return jsonify({"fotos": fotos[:40], "diag": diag})
+
+
+@sync_bp.route("/fotos/ia", methods=["POST"])
+def fotos_ia():
+    """Busca imágenes reales del producto con IA (web_search + web_fetch):
+    identifica el producto exacto y devuelve links directos de sus fotos."""
+    body    = request.json or {}
+    q       = body.get("q", "")
+    alt     = (body.get("alt") or "").strip()
+    marca   = (body.get("marca") or "").strip()
+    slug    = (body.get("slug_url") or "").strip()
+    api_key = body.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return jsonify({"fotos": [], "error": "Falta la API key de Anthropic (Configuración)."})
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        modelo = re.sub(r"\d+\s*/\s*\d+(\s*/\s*\d+)*", "", q).strip()
+        pedido = (f"Identificá el producto EXACTO: marca {marca or '(ver nombre)'}, "
+                  f"modelo '{modelo}', código de fabricante {alt or '(sin código)'}. "
+                  + (f"Página oficial: {slug}. " if slug else "")
+                  + "Buscá en el sitio oficial de la marca y en retailers serios de "
+                  "ciclismo sus fotos de producto (fondo limpio). Devolvé ÚNICAMENTE "
+                  "un array JSON con 4 a 8 URLs directas a imágenes (.jpg/.jpeg/.png/"
+                  ".webp) del producto, así: [\"https://...\", \"https://...\"]. "
+                  "Sin texto fuera del array. No inventes URLs: solo las que hayas visto.")
+        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
+                 {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 4}]
+        mensajes = [{"role": "user", "content": pedido}]
+        resp = None
+        for _ in range(6):
+            resp = client.messages.create(
+                model=os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8"),
+                max_tokens=1500, messages=mensajes, tools=tools)
+            if resp.stop_reason == "pause_turn":
+                mensajes.append({"role": "assistant", "content": resp.content})
+                continue
+            break
+        texto = "\n".join(b.text for b in resp.content
+                          if getattr(b, "type", "") == "text")
+        m = re.search(r"\[.*\]", texto, re.S)
+        urls = json.loads(m.group(0)) if m else []
+        vistos, fotos = set(), []
+        for u in urls:
+            if isinstance(u, str) and u.startswith("http") and u not in vistos:
+                vistos.add(u)
+                fotos.append({"url": u, "size": "", "chica": False,
+                              "fuente": "Encontrada por IA", "tipo": "ia"})
+        return jsonify({"fotos": fotos})
+    except Exception as e:
+        return jsonify({"fotos": [], "error": str(e)})
 
 
 @sync_bp.route("/publish/ml", methods=["POST"])
