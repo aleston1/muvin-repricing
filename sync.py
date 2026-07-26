@@ -1014,8 +1014,23 @@ def publish_ml():
         rd = ml_post(f"/items/{item_id}/description", token, {"plain_text": descripcion})
         if rd.status_code not in (200, 201):
             desc_warning = f"El item se creó pero la descripción falló: {rd.text[:300]}"
+
+    # Aviso inmediato si ML no la dejó activa (quedó en revisión / con problema)
+    estado_warning = None
+    estado = creado.get("status")
+    sub = creado.get("sub_status") or []
+    if estado and estado != "active":
+        motivos = ", ".join(sub) if sub else ""
+        nombres = {"under_review": "en revisión por Mercado Libre",
+                   "inactive": "inactiva (le falta algún dato obligatorio)",
+                   "paused": "pausada"}
+        estado_warning = (f"La publicación quedó {nombres.get(estado, estado)}"
+                          + (f" — motivo: {motivos}" if motivos else "")
+                          + ". Suele ser porque la categoría exige publicar por catálogo. "
+                            "Si se da de baja, avisá para resolverlo.")
     return jsonify({"ok": True, "id": item_id, "permalink": creado.get("permalink"),
-                    "warning": desc_warning})
+                    "status": estado, "sub_status": sub,
+                    "warning": desc_warning or estado_warning})
 
 
 # ---------------------------------------------------------------- Tiendanube
