@@ -859,25 +859,49 @@ def _foto_ml(p):
 def _bing_images(query, limit=20):
     """Imágenes de la web vía Bing (sin API key). Best-effort."""
     urls = []
-    try:
-        r = requests.get("https://www.bing.com/images/search",
-                         params={"q": query, "count": limit, "qft": "+filterui:imagesize-large"},
-                         headers={"User-Agent": BROWSER_UA, "Accept-Language": "es-AR,es"},
-                         timeout=15)
-        r.raise_for_status()
-        # Bing embebe la metadata como JSON HTML-escapado con "murl":"<url>"
-        for m in re.finditer(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', r.text):
+    r = requests.get("https://www.bing.com/images/search",
+                     params={"q": query, "count": limit, "qft": "+filterui:imagesize-large"},
+                     headers={"User-Agent": BROWSER_UA, "Accept-Language": "es-AR,es"},
+                     timeout=15)
+    r.raise_for_status()
+    for pat in (r'murl&quot;:&quot;(https?://[^&]+?)&quot;', r'"murl":"(https?://[^"]+?)"'):
+        for m in re.finditer(pat, r.text):
             u = m.group(1).replace("\\/", "/")
             if u not in urls:
                 urls.append(u)
-        if not urls:  # fallback: variante sin escapar
-            for m in re.finditer(r'"murl":"(https?://[^"]+?)"', r.text):
-                u = m.group(1).replace("\\/", "/")
-                if u not in urls:
-                    urls.append(u)
-    except Exception:
-        pass
+        if urls:
+            break
     return urls[:limit]
+
+
+def _ddg_images(query, limit=20):
+    """Imágenes de la web vía DuckDuckGo (JSON, sin API key). Best-effort."""
+    s = requests.Session()
+    s.headers.update({"User-Agent": BROWSER_UA, "Accept-Language": "es-AR,es"})
+    r = s.get("https://duckduckgo.com/", params={"q": query}, timeout=15)
+    m = (re.search(r'vqd=["\']([\d-]+)["\']', r.text)
+         or re.search(r'vqd=([\d-]+)\&', r.text)
+         or re.search(r'"vqd":"([\d-]+)"', r.text))
+    if not m:
+        return []
+    rj = s.get("https://duckduckgo.com/i.js",
+               params={"l": "ar-es", "o": "json", "q": query, "vqd": m.group(1),
+                       "f": "size:Large", "p": "1"},
+               headers={"Referer": "https://duckduckgo.com/"}, timeout=15)
+    data = rj.json()
+    return [it["image"] for it in data.get("results", []) if it.get("image")][:limit]
+
+
+def _imagenes_web(query, limit=20):
+    """Prueba DuckDuckGo y Bing; devuelve (urls, error_str)."""
+    for fn in (_ddg_images, _bing_images):
+        try:
+            urls = fn(query, limit)
+            if urls:
+                return urls, None
+        except Exception as e:
+            ultimo = f"{fn.__name__}: {e}"
+    return [], locals().get("ultimo")
 
 
 def _imagenes_fabricante(url):
@@ -939,12 +963,22 @@ def buscar_fotos():
                       "chica": bool(ancho and ancho < 900), "fuente": fuente,
                       "tipo": tipo})  # fabricante | catalogo | publicacion
 
-    try:
-        # 1) Imágenes de la página del fabricante (las de mejor calidad)
-        if slug_url:
+    # Cada fuente es independiente: si una falla, las otras siguen. diag
+    # cuenta lo que aportó cada una y registra errores para diagnosticar.
+    diag = {}
+
+    # 1) Página del fabricante
+    if slug_url:
+        try:
+            n0 = len(fotos)
             for img in _imagenes_fabricante(slug_url):
                 agregar(img, (0, 0), "Página del fabricante", "fabricante")
+            diag["fabricante"] = len(fotos) - n0
+        except Exception as e:
+            diag["fabricante_error"] = str(e)[:200]
 
+    # 2) y 3) Mercado Libre (catálogo + publicaciones)
+    try:
         results, ids_vistos = [], set()
         for consulta in ([alt] if alt else []) + [q]:
             data = ml_get("/sites/MLA/search", token, {"q": consulta, "limit": 10})
@@ -952,7 +986,8 @@ def buscar_fotos():
                 if r.get("id") not in ids_vistos:
                     ids_vistos.add(r.get("id"))
                     results.append(r)
-        # 2) Catálogo oficial de ML (mismo producto, fotos limpias)
+        diag["ml_resultados"] = len(results)
+        n0 = len(fotos)
         for r in results:
             cpid = r.get("catalog_product_id")
             if not cpid or cpid in vistos:
@@ -965,31 +1000,36 @@ def buscar_fotos():
                     agregar(url, wh, "Catálogo ML — " + (prod.get("name") or ""), "catalogo")
             except Exception:
                 pass
-        # 3) Publicaciones existentes de otros vendedores
         ids = [r["id"] for r in results if r.get("id")][:10]
-        if ids:
-            for i in range(0, len(ids), 20):
-                details = ml_get("/items", token, {"ids": ",".join(ids[i:i+20]),
-                                                   "attributes": "id,title,pictures"})
-                for x in details:
-                    if x.get("code") != 200:
-                        continue
-                    it = x["body"]
-                    for p in (it.get("pictures") or [])[:3]:
-                        url, wh = _foto_ml(p)
-                        agregar(url, wh, it.get("title") or "", "publicacion")
-        # 4) Imágenes de la web (Bing) — clave para productos de nicho sin
-        # publicación en ML ni página de fabricante cargada
-        consulta_web = " ".join(filter(None, [alt, q]))[:120]
-        for u in _bing_images(consulta_web, 20):
-            agregar(u, (0, 0), "Web", "web")
-
-        # Ordenar: fabricante y catálogo primero, después web, y grandes antes
-        orden = {"fabricante": 0, "catalogo": 1, "web": 2, "publicacion": 3}
-        fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 4)))
-        return jsonify({"fotos": fotos[:40]})
+        for i in range(0, len(ids), 20):
+            details = ml_get("/items", token, {"ids": ",".join(ids[i:i+20]),
+                                               "attributes": "id,title,pictures"})
+            for x in details:
+                if x.get("code") != 200:
+                    continue
+                for p in (x["body"].get("pictures") or [])[:3]:
+                    url, wh = _foto_ml(p)
+                    agregar(url, wh, x["body"].get("title") or "", "publicacion")
+        diag["ml_fotos"] = len(fotos) - n0
     except Exception as e:
-        return jsonify({"fotos": [], "error": str(e)})
+        diag["ml_error"] = str(e)[:200]
+
+    # 4) Imágenes de la web (para productos de nicho)
+    try:
+        n0 = len(fotos)
+        consulta_web = " ".join(filter(None, [alt, q]))[:120]
+        urls, err = _imagenes_web(consulta_web, 20)
+        for u in urls:
+            agregar(u, (0, 0), "Web", "web")
+        diag["web"] = len(fotos) - n0
+        if err:
+            diag["web_error"] = err[:200]
+    except Exception as e:
+        diag["web_error"] = str(e)[:200]
+
+    orden = {"fabricante": 0, "catalogo": 1, "web": 2, "publicacion": 3}
+    fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 4)))
+    return jsonify({"fotos": fotos[:40], "diag": diag})
 
 
 @sync_bp.route("/publish/ml", methods=["POST"])
