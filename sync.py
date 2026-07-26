@@ -1267,12 +1267,19 @@ usuario. Si no encontrás un dato, omitilo — NUNCA inventes specs.
 - Si no encontrás nada del producto, escribí una descripción general honesta \
 con lo que sí sabés, sin rellenar con datos inventados.
 - No menciones precio, stock ni envío. No cites las URLs en el texto final.
-- No narres tu proceso ni escribas comentarios como "voy a investigar" o \
-"encontré la ficha": tu respuesta final debe empezar DIRECTAMENTE con el \
-primer párrafo de la descripción y no contener nada más.
 - NO incluyas el código de fabricante / MPN en la descripción (ni en la \
 lista de especificaciones ni en el texto): un sistema lo agrega solo al final.
-- Respondé SOLO con el texto de la descripción, sin encabezados ni comentarios."""
+
+IMPORTANTE — FORMATO DE SALIDA: podés pensar o buscar lo que necesites, pero \
+la descripción final va OBLIGATORIAMENTE encerrada entre las etiquetas \
+<desc> y </desc>, sin nada más adentro (ni comentarios, ni el código, ni \
+"aquí está"). Ejemplo:
+<desc>
+[primer párrafo]
+
+- Componente: detalle
+- Componente: detalle
+</desc>"""
 
 
 def descripcion_plantilla(nombre, titulo):
@@ -1318,9 +1325,19 @@ _NARRACION = re.compile(
     r"perfecto[.,]|listo[.,]|aquí|acá va|here'?s|this ).*", re.I)
 
 
+_CIERRE_NARRACION = re.compile(
+    r"(redacto|escribo|redacción|aqu[ií] (va|est[áa])|acá va|here'?s)", re.I)
+
+
 def limpiar_narracion(texto):
     """Saca líneas de 'pensamiento' que la IA pueda dejar al principio."""
     lineas = texto.split("\n")
+    # Si en las primeras líneas hay un cierre tipo "Redacto la descripción",
+    # descartar todo hasta ahí (es todo narración previa)
+    for i, l in enumerate(lineas[:6]):
+        if _CIERRE_NARRACION.search(l) and l.strip().endswith((".", ":")):
+            lineas = lineas[i + 1:]
+            break
     while lineas and (not lineas[0].strip() or _NARRACION.match(lineas[0])):
         lineas.pop(0)
     return "\n".join(lineas).strip()
@@ -1409,7 +1426,11 @@ def describe():
                               if getattr(b, "type", "") == "text").strip()
         if not texto:
             raise RuntimeError("La API no devolvió texto")
-        texto = con_codigo(limpiar_narracion(texto), sku)
+        # La descripción real va entre <desc>...</desc>; si está, tomamos solo
+        # eso (evita cualquier narración fuera de las etiquetas)
+        m = re.search(r"<desc>\s*(.*?)\s*</desc>", texto, re.S | re.I)
+        texto = m.group(1) if m else limpiar_narracion(texto)
+        texto = con_codigo(texto, sku)
         return jsonify({"texto": texto, "html": texto_a_html(texto), "generado_con_ia": True})
     except Exception as e:
         texto = con_codigo(descripcion_plantilla(nombre, titulo), sku)
