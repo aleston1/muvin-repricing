@@ -790,8 +790,8 @@ function buscarMasFotos(){
   const q = document.getElementById('w-foto-buscar').value.trim();
   cargarFotosCandidatas(q || undefined);
 }
-const FUENTE_COLOR = {fabricante:'rgba(30,126,52,.85)', catalogo:'rgba(41,104,200,.85)', publicacion:'rgba(120,120,120,.8)'};
-const FUENTE_NOM = {fabricante:'fabricante', catalogo:'catálogo', publicacion:'ML'};
+const FUENTE_COLOR = {fabricante:'rgba(30,126,52,.85)', catalogo:'rgba(41,104,200,.85)', web:'rgba(150,90,30,.85)', publicacion:'rgba(120,120,120,.8)'};
+const FUENTE_NOM = {fabricante:'fabricante', catalogo:'catálogo', web:'web', publicacion:'ML'};
 function renderCandidatas(){
   const cont = document.getElementById('w-fotos-cand');
   cont.innerHTML = CANDIDATAS.map((f,i)=>{

@@ -856,6 +856,30 @@ def _foto_ml(p):
     return url, wh
 
 
+def _bing_images(query, limit=20):
+    """Imágenes de la web vía Bing (sin API key). Best-effort."""
+    urls = []
+    try:
+        r = requests.get("https://www.bing.com/images/search",
+                         params={"q": query, "count": limit, "qft": "+filterui:imagesize-large"},
+                         headers={"User-Agent": BROWSER_UA, "Accept-Language": "es-AR,es"},
+                         timeout=15)
+        r.raise_for_status()
+        # Bing embebe la metadata como JSON HTML-escapado con "murl":"<url>"
+        for m in re.finditer(r'murl&quot;:&quot;(https?://[^&]+?)&quot;', r.text):
+            u = m.group(1).replace("\\/", "/")
+            if u not in urls:
+                urls.append(u)
+        if not urls:  # fallback: variante sin escapar
+            for m in re.finditer(r'"murl":"(https?://[^"]+?)"', r.text):
+                u = m.group(1).replace("\\/", "/")
+                if u not in urls:
+                    urls.append(u)
+    except Exception:
+        pass
+    return urls[:limit]
+
+
 def _imagenes_fabricante(url):
     """Imágenes de la página del fabricante (og:image + galería)."""
     try:
@@ -954,10 +978,16 @@ def buscar_fotos():
                     for p in (it.get("pictures") or [])[:3]:
                         url, wh = _foto_ml(p)
                         agregar(url, wh, it.get("title") or "", "publicacion")
-        # Ordenar: fabricante y catálogo primero, y las grandes antes
-        orden = {"fabricante": 0, "catalogo": 1, "publicacion": 2}
-        fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 3)))
-        return jsonify({"fotos": fotos[:30]})
+        # 4) Imágenes de la web (Bing) — clave para productos de nicho sin
+        # publicación en ML ni página de fabricante cargada
+        consulta_web = " ".join(filter(None, [alt, q]))[:120]
+        for u in _bing_images(consulta_web, 20):
+            agregar(u, (0, 0), "Web", "web")
+
+        # Ordenar: fabricante y catálogo primero, después web, y grandes antes
+        orden = {"fabricante": 0, "catalogo": 1, "web": 2, "publicacion": 3}
+        fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 4)))
+        return jsonify({"fotos": fotos[:40]})
     except Exception as e:
         return jsonify({"fotos": [], "error": str(e)})
 
