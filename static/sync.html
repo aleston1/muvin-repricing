@@ -237,33 +237,33 @@
     </div>
 
     <div class="w-section">
-      <h3>Fotos (aprobación manual)</h3>
-      <div style="margin-bottom:10px">
-        <label style="font-size:12px;color:#666">Candidatas encontradas en Mercado Libre — hacé clic en las que quieras usar
-          <button class="btn btn-sm" style="padding:2px 8px;margin-left:6px" onclick="cargarFotosCandidatas()">↻ Buscar de nuevo</button>
-        </label>
-        <div class="fotos-grid" id="w-fotos-cand"><span class="hint">Buscando candidatas…</span></div>
+      <h3>Fotos</h3>
+      <div style="margin-bottom:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="w-foto-buscar" placeholder="Buscar más fotos (ej: marca + modelo)…" style="flex:1;min-width:200px"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();buscarMasFotos();}">
+        <button class="btn btn-sm" onclick="buscarMasFotos()">🔍 Buscar</button>
       </div>
-      <div class="w-row" style="align-items:flex-end">
+      <label style="font-size:12px;color:#666">Hacé clic en las fotos que quieras usar (arriba quedan las elegidas)</label>
+      <div class="fotos-grid" id="w-fotos-cand"><span class="hint">Buscando fotos…</span></div>
+      <div class="w-row" style="align-items:flex-end;margin-top:8px">
         <div style="flex:2">
-          <label>¿No encontraste? Buscá en la web</label>
+          <label>¿Falta alguna? Buscá en la web (se abre en otra pestaña)</label>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <a class="btn btn-sm" id="ps-fab" target="_blank" rel="noopener" style="display:none;background:#e6f4ea;border-color:#b7dfbf;color:#1e7e34">Página del fabricante</a>
             <a class="btn btn-sm" id="ps-google" target="_blank" rel="noopener">Google Imágenes</a>
             <a class="btn btn-sm" id="ps-bing" target="_blank" rel="noopener">Bing</a>
-            <a class="btn btn-sm" id="ps-ddg" target="_blank" rel="noopener">DuckDuckGo</a>
           </div>
         </div>
         <div style="flex:3">
-          <label>Pegar URL de imagen (jpg/png, pública)</label>
+          <label>…y pegá el link de la imagen acá</label>
           <div style="display:flex;gap:6px">
             <input type="text" id="w-foto-url" placeholder="https://...">
             <button class="btn btn-sm" onclick="agregarFoto()">Agregar</button>
           </div>
         </div>
       </div>
-      <div class="fotos-grid" id="w-fotos"></div>
-      <div class="hint">La primera foto es la principal. Revisá que correspondan al producto y que tengas derecho a usarlas (idealmente del fabricante).</div>
+      <label style="font-size:12px;color:#666;margin-top:8px;display:block">Fotos elegidas (la primera es la principal)</label>
+      <div class="fotos-grid" id="w-fotos"><span class="hint">Todavía no elegiste ninguna.</span></div>
     </div>
 
     <div class="result-box" id="w-result"></div>
@@ -736,7 +736,6 @@ async function abrirWizard(raiz){
     tituloCount();
     document.getElementById('ps-google').href = d.photo_search.google;
     document.getElementById('ps-bing').href = d.photo_search.bing;
-    document.getElementById('ps-ddg').href = d.photo_search.duckduckgo;
     predecirCategoria();
     cargarFotosCandidatas();
   } catch(e){ /* el usuario puede completar a mano */ }
@@ -763,40 +762,54 @@ async function cargarFotosExistentes(){
 }
 
 let CANDIDATAS = [];
-async function cargarFotosCandidatas(){
+async function cargarFotosCandidatas(q){
   const cont = document.getElementById('w-fotos-cand');
-  cont.innerHTML = '<span class="hint">Buscando candidatas en Mercado Libre…</span>';
-  const q = document.getElementById('w-titulo').value || (W && W.nombre) || '';
+  cont.innerHTML = '<span class="hint">Buscando fotos…</span>';
+  const query = q || document.getElementById('w-titulo').value || (W && W.nombre) || '';
   try {
     const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[W.sku_raiz] && EQUIV.slugs[W.sku_raiz].url) || '';
-    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(q)}&alt=${encodeURIComponent(W.alt || '')}&slug_url=${encodeURIComponent(slugUrl)}`);
+    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(query)}&alt=${encodeURIComponent(W.alt || '')}&slug_url=${encodeURIComponent(slugUrl)}`);
     CANDIDATAS = d.fotos || [];
     if (!CANDIDATAS.length){
-      cont.innerHTML = '<span class="hint">No se encontraron candidatas — usá los buscadores de abajo o pegá una URL.</span>';
+      cont.innerHTML = '<span class="hint">No se encontraron fotos — probá el buscador de arriba con otras palabras, o pegá un link.</span>';
       return;
+    }
+    // Auto-elegir las más confiables (fabricante y catálogo, grandes) si no
+    // hay ninguna elegida todavía
+    if (!FOTOS.length){
+      CANDIDATAS.filter(f => (f.tipo==='fabricante'||f.tipo==='catalogo') && !f.chica)
+                .slice(0,4).forEach(f => { if (!FOTOS.includes(f.url)) FOTOS.push(f.url); });
+      renderFotos();
     }
     renderCandidatas();
   } catch(e){
-    cont.innerHTML = '<span class="hint">No se pudieron buscar candidatas ('+escapeHtml(e.message)+').</span>';
+    cont.innerHTML = '<span class="hint">No se pudieron buscar fotos ('+escapeHtml(e.message)+').</span>';
   }
 }
+function buscarMasFotos(){
+  const q = document.getElementById('w-foto-buscar').value.trim();
+  cargarFotosCandidatas(q || undefined);
+}
+const FUENTE_COLOR = {fabricante:'rgba(30,126,52,.85)', catalogo:'rgba(41,104,200,.85)', publicacion:'rgba(120,120,120,.8)'};
+const FUENTE_NOM = {fabricante:'fabricante', catalogo:'catálogo', publicacion:'ML'};
 function renderCandidatas(){
   const cont = document.getElementById('w-fotos-cand');
   cont.innerHTML = CANDIDATAS.map((f,i)=>{
     const usada = FOTOS.includes(f.url);
-    const etiqueta = f.size
-      ? `<div class="ppal" style="background:${f.chica?'rgba(192,57,43,.8)':'rgba(30,126,52,.8)'}">${f.size}</div>`
-      : '';
+    const badge = f.size ? f.size : (FUENTE_NOM[f.tipo]||'');
+    const color = f.chica ? 'rgba(192,57,43,.85)' : (FUENTE_COLOR[f.tipo]||'rgba(30,126,52,.85)');
     return `<div class="foto foto-cand${usada?' usada':''}" title="${escapeHtml(f.fuente)}${f.chica?' — chica, puede verse pixelada':''}" onclick="usarCandidata(${i})">
       <img src="${escapeHtml(f.url)}" onerror="this.parentElement.style.display='none'" alt="">
-      ${etiqueta}
+      ${usada?'<div class="ppal" style="background:rgba(30,126,52,.9)">✓ elegida</div>':(badge?`<div class="ppal" style="background:${color}">${escapeHtml(badge)}</div>`:'')}
     </div>`;
   }).join('');
 }
 function usarCandidata(i){
   const f = CANDIDATAS[i];
-  if (!f || FOTOS.includes(f.url)) return;
-  FOTOS.push(f.url);
+  if (!f) return;
+  const pos = FOTOS.indexOf(f.url);
+  if (pos >= 0) FOTOS.splice(pos, 1);  // segundo clic = sacar
+  else FOTOS.push(f.url);
   renderFotos();
   renderCandidatas();
 }
@@ -910,7 +923,9 @@ function agregarFoto(){
 }
 function quitarFoto(i){ FOTOS.splice(i,1); renderFotos(); renderCandidatas(); }
 function renderFotos(){
-  document.getElementById('w-fotos').innerHTML = FOTOS.map((u,i)=>`
+  const cont = document.getElementById('w-fotos');
+  if (!FOTOS.length){ cont.innerHTML = '<span class="hint">Todavía no elegiste ninguna.</span>'; return; }
+  cont.innerHTML = FOTOS.map((u,i)=>`
     <div class="foto">
       <img src="${escapeHtml(u)}" onerror="this.style.opacity=.2" alt="">
       <button class="del" onclick="quitarFoto(${i})">×</button>
