@@ -1017,7 +1017,13 @@ def buscar_fotos():
     # 4) Imágenes de la web (para productos de nicho)
     try:
         n0 = len(fotos)
-        consulta_web = " ".join(filter(None, [alt, q]))[:120]
+        # OJO: NO usar el código de fabricante acá — los códigos no tienen
+        # imágenes y el buscador devuelve fotos genéricas (gente al azar).
+        # Usamos la descripción + contexto de rubro para acotar.
+        base = re.sub(r"\b[A-Z]{2,}\d{3,}[A-Z0-9]*\b", "", q)  # saca códigos
+        base = re.sub(r"\d+\s*/\s*\d+(\s*/\s*\d+)*", "", base)  # saca "4/5/6"
+        base = re.sub(r"\s+", " ", base).strip()
+        consulta_web = (base + " bicicleta")[:120]
         urls, err = _imagenes_web(consulta_web, 20)
         for u in urls:
             agregar(u, (0, 0), "Web", "web")
