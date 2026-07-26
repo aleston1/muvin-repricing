@@ -768,7 +768,8 @@ async function cargarFotosCandidatas(q){
   const query = q || document.getElementById('w-titulo').value || (W && W.nombre) || '';
   try {
     const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[W.sku_raiz] && EQUIV.slugs[W.sku_raiz].url) || '';
-    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(query)}&alt=${encodeURIComponent(W.alt || '')}&slug_url=${encodeURIComponent(slugUrl)}`);
+    const marca = document.getElementById('w-marca').value.trim();
+    const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(query)}&alt=${encodeURIComponent(W.alt || '')}&marca=${encodeURIComponent(marca)}&slug_url=${encodeURIComponent(slugUrl)}`);
     CANDIDATAS = d.fotos || [];
     if (!CANDIDATAS.length){
       const diag = d.diag ? '<br><span style="font-size:11px;color:#c0392b">diag: '+escapeHtml(JSON.stringify(d.diag))+'</span>' : '';
