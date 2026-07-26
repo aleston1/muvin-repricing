@@ -847,15 +847,13 @@ MIN_FOTO_PX = 500  # ancho mínimo aceptable para no publicar imágenes chicas
 
 
 def _foto_ml(p):
-    """De un objeto picture de ML devuelve (url_máxima, (ancho, alto))."""
+    """De un objeto picture de ML devuelve (url, (ancho, alto)). Usa la URL
+    que ML sirve (no fuerza -O, que no siempre existe y rompía la carga)."""
     url = p.get("secure_url") or p.get("url") or ""
-    # La URL trae un sufijo de tamaño antes de la extensión (-O original,
-    # -F, -V, -W...). Forzamos -O para la resolución original.
-    url_max = re.sub(r"-[A-Z]\.(jpg|jpeg|png|webp)(\?.*)?$", r"-O.\1", url, flags=re.I)
     dim = p.get("max_size") or p.get("size") or ""
     m = re.match(r"(\d+)\s*x\s*(\d+)", str(dim))
     wh = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
-    return url_max or url, wh
+    return url, wh
 
 
 def _og_image(url):
@@ -1201,6 +1199,11 @@ usuario. Si no encontrás un dato, omitilo — NUNCA inventes specs.
 - Si no encontrás nada del producto, escribí una descripción general honesta \
 con lo que sí sabés, sin rellenar con datos inventados.
 - No menciones precio, stock ni envío. No cites las URLs en el texto final.
+- No narres tu proceso ni escribas comentarios como "voy a investigar" o \
+"encontré la ficha": tu respuesta final debe empezar DIRECTAMENTE con el \
+primer párrafo de la descripción y no contener nada más.
+- NO incluyas el código de fabricante / MPN en la descripción (ni en la \
+lista de especificaciones ni en el texto): un sistema lo agrega solo al final.
 - Respondé SOLO con el texto de la descripción, sin encabezados ni comentarios."""
 
 
@@ -1240,11 +1243,19 @@ def texto_a_html(texto):
     return "".join(html_partes)
 
 
+_LINEA_CODIGO = re.compile(
+    r"^\s*[-•*]?\s*(c[óo]digo(\s+de\s+fabricante|\s+alternativo)?|mpn|"
+    r"n[úu]mero\s+de\s+pieza|part\s*number)\s*[:\-].*$", re.I)
+
+
 def con_codigo(texto, codigo):
-    """Asegura la línea final 'Código: <alternativo>'. Si el item no tiene
-    código alternativo no se agrega nada."""
-    if codigo and not re.search(r"C[óo]digo:\s*\S", texto, re.I):
-        texto = texto.rstrip() + f"\n\nCódigo: {codigo}"
+    """Deja una única línea final 'Código: <alternativo>', quitando cualquier
+    mención del código que la IA haya puesto en el texto. Si no hay código
+    alternativo, no agrega nada (pero igual limpia las menciones sueltas)."""
+    lineas = [l for l in texto.splitlines() if not _LINEA_CODIGO.match(l)]
+    texto = "\n".join(lineas).rstrip()
+    if codigo:
+        texto += f"\n\nCódigo: {codigo}"
     return texto
 
 
@@ -1301,8 +1312,18 @@ def describe():
         except Exception:
             resp = generar([])  # si la búsqueda web no está disponible, sin tools
 
-        texto = "\n".join(b.text for b in resp.content
-                          if getattr(b, "type", "") == "text").strip()
+        # La descripción real es el texto que viene DESPUÉS de la última
+        # búsqueda; lo anterior es la IA narrando su proceso ("voy a buscar…")
+        bloques = list(resp.content)
+        ult_tool = -1
+        for i, b in enumerate(bloques):
+            if getattr(b, "type", "") not in ("text", "thinking"):
+                ult_tool = i
+        finales = [b for b in bloques[ult_tool + 1:] if getattr(b, "type", "") == "text"]
+        texto = "\n".join(b.text for b in finales).strip()
+        if not texto:  # sin herramientas usadas: tomar todo el texto
+            texto = "\n".join(b.text for b in bloques
+                              if getattr(b, "type", "") == "text").strip()
         if not texto:
             raise RuntimeError("La API no devolvió texto")
         texto = con_codigo(texto, sku)

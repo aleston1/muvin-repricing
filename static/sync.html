@@ -943,12 +943,11 @@ function validarComun(){
   return null;
 }
 function descConCodigo(){
-  // Línea final "Código: <alternativo de Hansa>". Si el item no tiene
-  // código alternativo, no se agrega nada.
-  let d = document.getElementById('w-desc').value.trim();
-  if (d && W.alt && !/C[óo]digo:\s*\S/i.test(d)){
-    d += '\n\nCódigo: ' + W.alt;
-  }
+  // Deja una única línea final "Código: <alternativo>", quitando cualquier
+  // mención del código que ya esté en el texto (para no duplicar).
+  const re = /^\s*[-•*]?\s*(c[óo]digo(\s+de\s+fabricante|\s+alternativo)?|mpn|n[úu]mero\s+de\s+pieza|part\s*number)\s*[:\-].*$/i;
+  let d = document.getElementById('w-desc').value.split('\n').filter(l => !re.test(l)).join('\n').trim();
+  if (d && W.alt) d += '\n\nCódigo: ' + W.alt;
   return d;
 }
 function mostrarResultado(ok, msg){
