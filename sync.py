@@ -946,6 +946,7 @@ def buscar_fotos():
     token    = request.args.get("token", os.environ.get("ML_TOKEN", ""))
     q        = request.args.get("q", "")
     alt      = request.args.get("alt", "").strip()      # código del fabricante
+    marca    = request.args.get("marca", "").strip()
     slug_url = request.args.get("slug_url", "").strip()  # página del fabricante
     if not q:
         return jsonify({"error": "Falta q"}), 400
@@ -1017,7 +1018,16 @@ def buscar_fotos():
     # 4) Imágenes de la web (para productos de nicho)
     try:
         n0 = len(fotos)
-        consulta_web = " ".join(filter(None, [alt, q]))[:120]
+        # Consulta: marca + modelo (del nombre) + código de fabricante — lo
+        # más específico posible. Sacamos los rangos tipo "4/5/6" que ensucian.
+        modelo = re.sub(r"\d+\s*/\s*\d+(\s*/\s*\d+)*", "", q)
+        palabras, vis = [], set()
+        for w in (marca + " " + modelo + " " + alt).split():
+            wl = w.lower()
+            if wl not in vis:
+                vis.add(wl)
+                palabras.append(w)
+        consulta_web = re.sub(r"\s+", " ", " ".join(palabras)).strip()[:120]
         urls, err = _imagenes_web(consulta_web, 20)
         for u in urls:
             agregar(u, (0, 0), "Web", "web")
