@@ -856,21 +856,39 @@ def _foto_ml(p):
     return url, wh
 
 
-def _og_image(url):
-    """Imagen principal (og:image) de una página del fabricante."""
+def _imagenes_fabricante(url):
+    """Imágenes de la página del fabricante (og:image + galería)."""
     try:
         r = requests.get(url, headers={"User-Agent": BROWSER_UA}, timeout=15)
         r.raise_for_status()
-        html = r.text[:200000]
+        html = r.text[:400000]
+        urls = []
+        # og:image primero (la principal)
         for pat in (r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
                     r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image',
                     r'<link[^>]+rel=["\']image_src["\'][^>]+href=["\']([^"\']+)'):
-            m = re.search(pat, html, re.I)
-            if m:
-                return m.group(1)
+            for m in re.finditer(pat, html, re.I):
+                urls.append(m.group(1))
+        # Imágenes de la galería del producto (jpg/png/webp grandes)
+        for m in re.finditer(r'(?:src|data-src|data-zoom-image|data-large_image)=["\']'
+                             r'(https?://[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)', html, re.I):
+            u = m.group(1)
+            if not re.search(r'(logo|icon|sprite|thumb|placeholder|banner|flag)', u, re.I):
+                urls.append(u)
+        base = re.match(r'(https?://[^/]+)', url)
+        norm, vistos = [], set()
+        for u in urls:
+            if u.startswith("//"):
+                u = "https:" + u
+            elif u.startswith("/") and base:
+                u = base.group(1) + u
+            if u.startswith("http") and u not in vistos:
+                vistos.add(u)
+                norm.append(u)
+        return norm[:8]
     except Exception:
         pass
-    return None
+    return []
 
 
 @sync_bp.route("/fotos")
@@ -885,7 +903,7 @@ def buscar_fotos():
         return jsonify({"error": "Falta q"}), 400
     fotos, vistos = [], set()
 
-    def agregar(url, wh, fuente):
+    def agregar(url, wh, fuente, tipo):
         if not url or url in vistos:
             return
         vistos.add(url)
@@ -894,23 +912,23 @@ def buscar_fotos():
         if ancho and ancho < MIN_FOTO_PX:
             return
         fotos.append({"url": url, "size": (f"{wh[0]}x{wh[1]}" if ancho else ""),
-                      "chica": bool(ancho and ancho < 900), "fuente": fuente})
+                      "chica": bool(ancho and ancho < 900), "fuente": fuente,
+                      "tipo": tipo})  # fabricante | catalogo | publicacion
 
     try:
-        # 1) Imagen de la página del fabricante (suele ser la de mejor calidad)
+        # 1) Imágenes de la página del fabricante (las de mejor calidad)
         if slug_url:
-            og = _og_image(slug_url)
-            if og:
-                agregar(og, (0, 0), "Página del fabricante")
+            for img in _imagenes_fabricante(slug_url):
+                agregar(img, (0, 0), "Página del fabricante", "fabricante")
 
         results, ids_vistos = [], set()
         for consulta in ([alt] if alt else []) + [q]:
-            data = ml_get("/sites/MLA/search", token, {"q": consulta, "limit": 6})
+            data = ml_get("/sites/MLA/search", token, {"q": consulta, "limit": 10})
             for r in data.get("results", []):
                 if r.get("id") not in ids_vistos:
                     ids_vistos.add(r.get("id"))
                     results.append(r)
-        # 2) Catálogo oficial de ML
+        # 2) Catálogo oficial de ML (mismo producto, fotos limpias)
         for r in results:
             cpid = r.get("catalog_product_id")
             if not cpid or cpid in vistos:
@@ -918,25 +936,28 @@ def buscar_fotos():
             vistos.add(cpid)
             try:
                 prod = ml_get(f"/products/{cpid}", token)
-                for p in (prod.get("pictures") or [])[:4]:
+                for p in (prod.get("pictures") or [])[:6]:
                     url, wh = _foto_ml(p)
-                    agregar(url, wh, "Catálogo ML — " + (prod.get("name") or ""))
+                    agregar(url, wh, "Catálogo ML — " + (prod.get("name") or ""), "catalogo")
             except Exception:
                 pass
-        # 3) Publicaciones existentes
-        ids = [r["id"] for r in results if r.get("id")][:6]
+        # 3) Publicaciones existentes de otros vendedores
+        ids = [r["id"] for r in results if r.get("id")][:10]
         if ids:
-            details = ml_get("/items", token, {"ids": ",".join(ids), "attributes": "id,title,pictures"})
-            for x in details:
-                if x.get("code") != 200:
-                    continue
-                it = x["body"]
-                for p in (it.get("pictures") or [])[:3]:
-                    url, wh = _foto_ml(p)
-                    agregar(url, wh, it.get("title") or "")
-        # Las más grandes primero
-        fotos.sort(key=lambda f: f["chica"])
-        return jsonify({"fotos": fotos[:16]})
+            for i in range(0, len(ids), 20):
+                details = ml_get("/items", token, {"ids": ",".join(ids[i:i+20]),
+                                                   "attributes": "id,title,pictures"})
+                for x in details:
+                    if x.get("code") != 200:
+                        continue
+                    it = x["body"]
+                    for p in (it.get("pictures") or [])[:3]:
+                        url, wh = _foto_ml(p)
+                        agregar(url, wh, it.get("title") or "", "publicacion")
+        # Ordenar: fabricante y catálogo primero, y las grandes antes
+        orden = {"fabricante": 0, "catalogo": 1, "publicacion": 2}
+        fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 3)))
+        return jsonify({"fotos": fotos[:30]})
     except Exception as e:
         return jsonify({"fotos": [], "error": str(e)})
 
@@ -1174,14 +1195,16 @@ La vida se trata del viaje, no del destino, y para eso está la Four Corners.
 PROMPT_SISTEMA = """Sos el redactor de Muvin (muvin.com.ar), una tienda argentina \
 de bicicletas urbanas y plegables, movilidad eléctrica y accesorios de ciclismo.
 
-Escribís descripciones de producto en español rioplatense con esta estructura:
-1. Uno o dos párrafos de apertura narrativa que conectan el producto con el uso \
-real del ciclista urbano o viajero (preguntas retóricas, escenarios de uso, \
-beneficios concretos). Cálido pero sin exagerar, sin emojis y sin superlativos vacíos.
-2. Opcionalmente una frase de cierre con personalidad.
-3. Una lista de especificaciones, cada línea con el formato "- Componente: detalle".
+Escribís descripciones de producto CONCISAS en español rioplatense, con esta estructura:
+1. UN párrafo corto (2 a 4 oraciones) que conecta el producto con su uso real. \
+Cálido pero directo, sin emojis, sin superlativos vacíos, sin relleno.
+2. Una lista de especificaciones clave, cada línea "- Componente: detalle". \
+Solo los datos que importan; no infles la lista.
 
-Ejemplo del estilo (bicicleta Marin Four Corners):
+Priorizá los datos técnicos concretos por sobre la prosa: es mejor una \
+descripción corta con datos reales que un texto largo y vago.
+
+Ejemplo del TONO (no de la extensión — para un accesorio simple, mucho más corto):
 ---
 {ejemplo}
 ---
@@ -1241,6 +1264,21 @@ def texto_a_html(texto):
     if bullets:
         html_partes.append("<ul>" + "".join(bullets) + "</ul>")
     return "".join(html_partes)
+
+
+_NARRACION = re.compile(
+    r"^\s*(voy a |déjame|dejame|let me|i'?ll |i will |now |the result|the mpn|"
+    r"the product|based on|según la ficha|tengo la ficha|escribo la|busqué|"
+    r"encontré|investigar|primero,|first,|el mpn|el código .* corresponde|"
+    r"perfecto[.,]|listo[.,]|aquí|acá va|here'?s|this ).*", re.I)
+
+
+def limpiar_narracion(texto):
+    """Saca líneas de 'pensamiento' que la IA pueda dejar al principio."""
+    lineas = texto.split("\n")
+    while lineas and (not lineas[0].strip() or _NARRACION.match(lineas[0])):
+        lineas.pop(0)
+    return "\n".join(lineas).strip()
 
 
 _LINEA_CODIGO = re.compile(
@@ -1326,7 +1364,7 @@ def describe():
                               if getattr(b, "type", "") == "text").strip()
         if not texto:
             raise RuntimeError("La API no devolvió texto")
-        texto = con_codigo(texto, sku)
+        texto = con_codigo(limpiar_narracion(texto), sku)
         return jsonify({"texto": texto, "html": texto_a_html(texto), "generado_con_ia": True})
     except Exception as e:
         texto = con_codigo(descripcion_plantilla(nombre, titulo), sku)
