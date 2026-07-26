@@ -239,9 +239,10 @@
     <div class="w-section">
       <h3>Fotos</h3>
       <div style="margin-bottom:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="w-foto-buscar" placeholder="Buscar más fotos (ej: marca + modelo)…" style="flex:1;min-width:200px"
+        <input type="text" id="w-foto-buscar" placeholder="Buscar en Mercado Libre (ej: marca + modelo)…" style="flex:1;min-width:180px"
                onkeydown="if(event.key==='Enter'){event.preventDefault();buscarMasFotos();}">
         <button class="btn btn-sm" onclick="buscarMasFotos()">🔍 Buscar</button>
+        <button class="btn btn-sm btn-green" id="btn-fotos-ia" onclick="buscarFotosIA()">✨ Buscar fotos con IA</button>
       </div>
       <label style="font-size:12px;color:#666">Hacé clic en las fotos que quieras usar (arriba quedan las elegidas)</label>
       <div class="fotos-grid" id="w-fotos-cand"><span class="hint">Buscando fotos…</span></div>
@@ -792,8 +793,37 @@ function buscarMasFotos(){
   const q = document.getElementById('w-foto-buscar').value.trim();
   cargarFotosCandidatas(q || undefined);
 }
-const FUENTE_COLOR = {fabricante:'rgba(30,126,52,.85)', catalogo:'rgba(41,104,200,.85)', web:'rgba(150,90,30,.85)', publicacion:'rgba(120,120,120,.8)'};
-const FUENTE_NOM = {fabricante:'fabricante', catalogo:'catálogo', web:'web', publicacion:'ML'};
+async function buscarFotosIA(){
+  const btn = document.getElementById('btn-fotos-ia');
+  btn.disabled = true; btn.textContent = 'Buscando en la web…';
+  const cont = document.getElementById('w-fotos-cand');
+  const aviso = document.createElement('div');
+  aviso.className = 'hint'; aviso.textContent = 'La IA está buscando las fotos reales del producto (~20 seg)…';
+  cont.prepend(aviso);
+  try {
+    const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[W.sku_raiz] && EQUIV.slugs[W.sku_raiz].url) || '';
+    const d = await api('/api/sync/fotos/ia', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        q: document.getElementById('w-titulo').value || W.nombre,
+        alt: W.alt || '', marca: document.getElementById('w-marca').value.trim(),
+        slug_url: slugUrl, api_key: cfg('cfg-ai-key'),
+      })});
+    if (!d.fotos || !d.fotos.length){
+      aviso.textContent = 'La IA no encontró fotos claras — probá el buscador de ML o pegá un link.' + (d.error?(' ('+d.error+')'):'');
+      return;
+    }
+    // Sumar al principio de las candidatas (son las más confiables)
+    const nuevas = d.fotos.filter(f => !CANDIDATAS.some(c => c.url === f.url));
+    CANDIDATAS = nuevas.concat(CANDIDATAS);
+    renderCandidatas();
+  } catch(e){
+    aviso.textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Buscar fotos con IA';
+  }
+}
+const FUENTE_COLOR = {fabricante:'rgba(30,126,52,.85)', catalogo:'rgba(41,104,200,.85)', ia:'rgba(120,60,160,.85)', web:'rgba(150,90,30,.85)', publicacion:'rgba(120,120,120,.8)'};
+const FUENTE_NOM = {fabricante:'fabricante', catalogo:'catálogo', ia:'IA', web:'web', publicacion:'ML'};
 function renderCandidatas(){
   const cont = document.getElementById('w-fotos-cand');
   cont.innerHTML = CANDIDATAS.map((f,i)=>{
