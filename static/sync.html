@@ -1018,9 +1018,11 @@ function atributosCategoria(){
 }
 // Atributo de código de barras para ML: el GTIN si se cargó, o el motivo
 // "sin GTIN" que la categoría acepta cuando el producto no tiene código.
-function gtinAttr(){
+// `barcode` opcional: código de barras propio de una variante.
+function gtinAttr(barcode){
   if (!GTIN_INFO.pedido) return null;
-  const gtin = (document.getElementById('w-gtin').value||'').trim();
+  const gtin = (barcode !== undefined ? (barcode || '')
+                                      : (document.getElementById('w-gtin').value || '')).trim();
   if (gtin) return {id:'GTIN', value_name: gtin};
   const motivo = (document.getElementById('w-gtin-motivo').value||'').trim();
   if (motivo) return {id:'EMPTY_GTIN_REASON', value_name: motivo};
@@ -1142,6 +1144,13 @@ async function publicarML(){
   if (err){ mostrarResultado(false, err); return; }
   const catId = document.getElementById('w-categoria').value;
   if (!catId){ mostrarResultado(false, 'Falta la categoría de ML (usá “Predecir” o cargala).'); return; }
+  // Si la categoría exige GTIN y no hay ni código de barras ni motivo válido,
+  // avisamos antes de mandar (ML lo rechazaría igual).
+  if (GTIN_INFO.pedido && !gtinAttr()){
+    document.getElementById('w-gtin-section').style.display = '';
+    mostrarResultado(false, 'Esta categoría de Mercado Libre exige el código de barras (GTIN). Cargalo en el campo de arriba, o elegí un motivo "sin código de barras".');
+    return;
+  }
   const precio = parseFloat(document.getElementById('w-precio').value);
   const vars = variantesSeleccionadas();
 
@@ -1165,9 +1174,6 @@ async function publicarML(){
   }
   // Atributos obligatorios propios de la categoría (cargados en el wizard)
   atributosCategoria().forEach(a => attrsItem.push(a));
-  // Código de barras (GTIN) o motivo "sin GTIN", si la categoría lo pide
-  const gAttr = gtinAttr();
-  if (gAttr) attrsItem.push(gAttr);
   // Impuestos (obligatorios en varias categorías; valores estándar Argentina)
   attrsItem.push({id:'VALUE_ADDED_TAX', value_name:'21 %'});
   attrsItem.push({id:'IMPORT_DUTY', value_name:'0 %'});
@@ -1181,19 +1187,29 @@ async function publicarML(){
   attrsItem.push({id:'SELLER_PACKAGE_WIDTH',  value_name: ancho + ' cm'});
   attrsItem.push({id:'SELLER_PACKAGE_HEIGHT', value_name: alto + ' cm'});
   if (vars.length){
-    item.variations = vars.map(v=>({
-      price: precio,
-      available_quantity: Math.max(0, Math.floor(v.stock)),
-      seller_custom_field: v.sku,
-      attribute_combinations: v.pares.map(p =>
-        p.atributo === 'Color' ? {id:'COLOR', value_name:p.valor} :
-        p.atributo === 'Talle' ? {id:'SIZE',  value_name:p.valor} :
-        {name: p.atributo, value_name: p.valor}),
-      picture_ids: FOTOS,
-    }));
+    item.variations = vars.map(v=>{
+      const variacion = {
+        price: precio,
+        available_quantity: Math.max(0, Math.floor(v.stock)),
+        seller_custom_field: v.sku,
+        attribute_combinations: v.pares.map(p =>
+          p.atributo === 'Color' ? {id:'COLOR', value_name:p.valor} :
+          p.atributo === 'Talle' ? {id:'SIZE',  value_name:p.valor} :
+          {name: p.atributo, value_name: p.valor}),
+        picture_ids: FOTOS,
+      };
+      // ML exige el GTIN dentro de cada variante (usa el código de barras de
+      // la variante si lo tiene; si no, el motivo "sin GTIN")
+      const g = gtinAttr(v.barcode_hansa);
+      if (g) variacion.attributes = [g];
+      return variacion;
+    });
   } else {
     item.available_quantity = parseInt(document.getElementById('w-cantidad').value) || 0;
     attrsItem.push({id:'SELLER_SKU', value_name: W.sku_raiz});
+    // Sin variantes: el GTIN va a nivel del ítem
+    const g = gtinAttr();
+    if (g) attrsItem.push(g);
   }
   if (attrsItem.length) item.attributes = attrsItem;
 
@@ -1208,7 +1224,17 @@ async function publicarML(){
     W.ml.push({id:d.id, permalink:d.permalink, status:'active', title:item.title});
     render();
   } catch(e){
-    mostrarResultado(false, 'Mercado Libre: ' + e.message);
+    // Red de seguridad: si ML rechaza por GTIN, mostramos el campo y forzamos
+    // que la categoría se marque como que lo pide, para poder reintentar.
+    if (/GTIN/i.test(e.message)){
+      GTIN_INFO.pedido = true;
+      if (!(GTIN_INFO.motivos && GTIN_INFO.motivos.length)) await cargarAtributosCategoria();
+      document.getElementById('w-attrs-cat-section').style.display = '';
+      document.getElementById('w-gtin-section').style.display = '';
+      mostrarResultado(false, 'Mercado Libre pide el código de barras (GTIN) para esta categoría. Cargalo arriba (o elegí un motivo "sin código de barras") y volvé a publicar.');
+    } else {
+      mostrarResultado(false, 'Mercado Libre: ' + e.message);
+    }
   } finally {
     btn.disabled = false; btn.textContent = 'Publicar en Mercado Libre';
   }
