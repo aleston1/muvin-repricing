@@ -482,7 +482,19 @@ let STOCK = {}, ML = {}, TN = {}, ROWS = [], SIN_SKU = [];
 let tnDisponible = false;
 
 async function api(path, opts){
-  const r = await fetch(path, opts);
+  opts = opts || {};
+  const ms = opts.timeout || 60000;  // corta a 60s por defecto (150s las de IA)
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms);
+  let r;
+  try {
+    r = await fetch(path, {...opts, signal: ctrl.signal});
+  } catch(e){
+    clearTimeout(t);
+    if (e.name === 'AbortError') throw new Error('La operación tardó demasiado y se canceló. Probá de nuevo.');
+    throw e;
+  }
+  clearTimeout(t);
   const data = await r.json().catch(()=>({error:'HTTP '+r.status+' — el servidor devolvió una respuesta no válida (¿la app se está reiniciando? probá de nuevo en 1 minuto)'}));
   if (!r.ok) throw new Error(data.detalle ? (data.error+': '+JSON.stringify(data.detalle)) : (data.error || ('HTTP '+r.status)));
   return data;
@@ -803,6 +815,7 @@ async function buscarFotosIA(){
   try {
     const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[W.sku_raiz] && EQUIV.slugs[W.sku_raiz].url) || '';
     const d = await api('/api/sync/fotos/ia', {method:'POST', headers:{'Content-Type':'application/json'},
+      timeout: 160000,
       body: JSON.stringify({
         q: document.getElementById('w-titulo').value || W.nombre,
         alt: W.alt || '', marca: document.getElementById('w-marca').value.trim(),
@@ -922,6 +935,7 @@ async function generarDescripcion(){
   try {
     const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[W.sku_raiz] && EQUIV.slugs[W.sku_raiz].url) || '';
     const d = await api('/api/sync/describe', {method:'POST', headers:{'Content-Type':'application/json'},
+      timeout: 160000,
       body: JSON.stringify({
         nombre: W.nombre,
         titulo: document.getElementById('w-titulo').value,
