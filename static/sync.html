@@ -455,11 +455,27 @@ function dimDe(p){
   }
   return null;
 }
-function categoriasTN(nombre){
+function categoriasTN(p){
   if (!EQUIV || !EQUIV.categorias_tn) return [];
+  // 1) La categoría sale del TIPO DE PRODUCTO (clasificación Hansa tipo PROD) y
+  //    su equivalencia cargada en la planilla. categorias_tn está indexado por
+  //    el código de grupo (ej. HERRA) además de por nombre.
+  if (p && p.grupos && EQUIV.clasificaciones){
+    for (const g of p.grupos){
+      const c = EQUIV.clasificaciones[g];
+      if (c && c.tipo === 'PROD'){
+        const porCod = EQUIV.categorias_tn[String(g).toUpperCase()];
+        if (porCod && porCod.length) return porCod;
+        // Fallback: por el nombre del tipo de producto
+        const porNom = EQUIV.categorias_tn[(c.nombre||'').toLowerCase()];
+        if (porNom && porNom.length) return porNom;
+      }
+    }
+  }
+  // 2) Fallback final: match por el primer segmento del nombre del producto
+  const nombre = (p && p.nombre) || (typeof p === 'string' ? p : '');
   const seg = sinAcentos((nombre||'').split(' - ')[0].split(',')[0].trim().toLowerCase());
   if (!seg) return [];
-  // Tolerar singular/plural y acentos: "candado" matchea "candados y accesorios"
   const sing = s => s.replace(/es$/,'').replace(/s$/,'');
   const objetivo = sing(seg);
   const candidatas = Object.keys(EQUIV.categorias_tn)
@@ -469,7 +485,6 @@ function categoriasTN(nombre){
       return kn === seg || sing(kn.split(' ')[0]) === objetivo;
     })
     .sort((a,b) => {
-      // Las categorías de moto van últimas salvo que el producto sea de moto
       const aMoto = a.includes('moto') && !seg.includes('moto') ? 1 : 0;
       const bMoto = b.includes('moto') && !seg.includes('moto') ? 1 : 0;
       return (aMoto - bMoto) || (a.length - b.length);
@@ -695,7 +710,7 @@ async function abrirWizard(raiz){
   }
 
   // Categorías de Tiendanube según el tipo de producto (planilla de equivalencias)
-  W._catsTN = categoriasTN(W.nombre);
+  W._catsTN = categoriasTN(W);
   document.getElementById('w-cats-tn').textContent = W._catsTN.length
     ? 'Categorías Tiendanube (automático): ' + W._catsTN.map(c=>c.nombre).join(' · ')
     : 'Sin categoría de Tiendanube mapeada para este tipo de producto (se publica sin categoría).';
@@ -1097,6 +1112,16 @@ async function publicarML(){
   }
 }
 
+// Resumen corto (meta description SEO) a partir de la descripción: primer
+// párrafo en texto plano, recortado a ~155 caracteres sin cortar palabras.
+function resumenSeo(texto){
+  const primero = (texto||'').split('\n').map(s=>s.trim())
+    .find(s => s && !s.startsWith('- ') && !/^código:/i.test(s)) || '';
+  if (primero.length <= 155) return primero;
+  const corte = primero.slice(0, 155);
+  return corte.slice(0, corte.lastIndexOf(' ')).trim() + '…';
+}
+
 // Publicar en Tiendanube
 function textoAHtml(texto){
   const out = []; let bullets = [];
@@ -1127,12 +1152,19 @@ async function publicarTN(){
     width:  String(parseFloat(document.getElementById('w-ancho').value) || 20),
     height: String(parseFloat(document.getElementById('w-alto').value)  || 15),
   };
+  const titulo = document.getElementById('w-titulo').value.trim();
+  const descTxt = descConCodigo();
   const product = {
-    name: {es: document.getElementById('w-titulo').value.trim()},
-    description: {es: textoAHtml(descConCodigo())},
+    name: {es: titulo},
+    description: {es: textoAHtml(descTxt)},
     images: FOTOS.map(u=>({src:u})),
     published: document.getElementById('w-tn-pub').value === 'true',
   };
+  // SEO: título = nombre del producto (+ marca); descripción = resumen corto
+  const seoTitulo = (marca && !titulo.toLowerCase().includes(marca.toLowerCase()))
+    ? `${titulo} - ${marca}` : titulo;
+  product.seo_title = {es: seoTitulo.slice(0, 70)};
+  product.seo_description = {es: resumenSeo(descTxt)};
   if (marca) product.brand = marca;
   if (W._catsTN && W._catsTN.length) product.categories = W._catsTN.map(c=>c.id);
   if (vars.length){
@@ -1164,7 +1196,8 @@ async function publicarTN(){
     const d = await api('/api/sync/publish/tn', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({store_id: cfg('cfg-tn-store'), token: cfg('cfg-tn-token'), product})});
     const link = d.url ? `<a href="${d.url}" target="_blank" rel="noopener">${d.id}</a>` : d.id;
-    mostrarResultado(true, `✓ Publicado en Tiendanube: ${link}`);
+    const aviso = d.warning ? `<br><small>⚠ ${escapeHtml(d.warning)}</small>` : '';
+    mostrarResultado(true, `✓ Publicado en Tiendanube: ${link}${aviso}`);
     W.tn.push({id:d.id, url:d.url, published: product.published, name: product.name.es});
     render();
   } catch(e){
