@@ -828,6 +828,26 @@ def ml_categoria():
         return jsonify({"predicciones": [], "error": str(e)})
 
 
+@sync_bp.route("/ml/categoria/nombre")
+def ml_categoria_nombre():
+    """Nombre de una categoría de ML a partir de su ID (para validar la carga
+    manual cuando la predicción no encontró categoría)."""
+    token = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    cat   = request.args.get("category_id", "").strip()
+    if not cat:
+        return jsonify({"error": "Falta category_id"}), 400
+    try:
+        data = ml_get(f"/categories/{cat}", token, {})
+        nombre = data.get("name") if isinstance(data, dict) else None
+        if not nombre:
+            return jsonify({"error": "categoría inexistente"})
+        # path_from_root ayuda a confirmar que es la correcta (ej. "Bicicletas > ...")
+        ruta = " > ".join(p.get("name", "") for p in (data.get("path_from_root") or []))
+        return jsonify({"name": nombre, "ruta": ruta})
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 # Atributos que la app ya completa sola (marca, impuestos, paquete, SKU, MPN):
 # no hace falta pedírselos al usuario aunque la categoría los marque required.
 _ATTR_AUTOCOMPLETADOS = {
