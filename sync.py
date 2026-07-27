@@ -73,16 +73,42 @@ def descargar_imagen(url):
     return r.content, ct, ext
 
 
-def encuadrar_1740x1170(contenido):
-    """Encuadra la imagen en un lienzo 1740x1170 (proporción 3:2) con fondo
-    blanco, sin deformar. Es el tamaño estándar de las fotos de Tiendanube."""
+# Umbral mínimo de calidad para las fotos de origen. Por debajo de esto la
+# imagen se ve pixelada al ampliarse y las dos plataformas la rechazan
+# ("No cumple el tamaño mínimo..."). Exigimos que el lado más corto tenga al
+# menos 500 px y el más largo al menos 800 px.
+FOTO_MIN_LADO_CORTO = 500
+FOTO_MIN_LADO_LARGO = 800
+
+
+def dim_imagen(contenido):
+    """(ancho, alto) de la imagen, o None si no se puede leer."""
     try:
         from PIL import Image
-        W, H, MARGEN = 1740, 1170, 0.92  # 8% de aire alrededor
+        with Image.open(io.BytesIO(contenido)) as img:
+            return img.size
+    except Exception:
+        return None
+
+
+def foto_calidad_ok(contenido):
+    """True si la imagen tiene resolución suficiente para publicar."""
+    dim = dim_imagen(contenido)
+    if not dim:
+        return False
+    w, h = dim
+    return min(w, h) >= FOTO_MIN_LADO_CORTO and max(w, h) >= FOTO_MIN_LADO_LARGO
+
+
+def encuadrar(contenido, W=1740, H=1170, margen=0.92):
+    """Encuadra la imagen en un lienzo WxH con fondo blanco, sin deformar.
+    Por defecto 1740x1170 (3:2, estándar Tiendanube); para ML se usa 1200x1200."""
+    try:
+        from PIL import Image
         img = Image.open(io.BytesIO(contenido)).convert("RGB")
         # Escala para llenar el cuadro (agranda las chicas y achica las
         # grandes) manteniendo la proporción
-        escala = min(W * MARGEN / img.width, H * MARGEN / img.height)
+        escala = min(W * margen / img.width, H * margen / img.height)
         nw, nh = max(1, round(img.width * escala)), max(1, round(img.height * escala))
         img = img.resize((nw, nh), Image.LANCZOS)
         lienzo = Image.new("RGB", (W, H), (255, 255, 255))
@@ -94,11 +120,23 @@ def encuadrar_1740x1170(contenido):
         return None
 
 
+def encuadrar_1740x1170(contenido):
+    """Compatibilidad: encuadre estándar de Tiendanube (3:2)."""
+    return encuadrar(contenido, 1740, 1170)
+
+
 def ml_subir_foto(token, url):
-    """Descarga la imagen y la sube al hosting de fotos de ML. Devuelve el
-    picture id, o None si no se pudo (se usará la URL original)."""
+    """Descarga la imagen, verifica su calidad, la reencuadra a un cuadrado
+    1200x1200 (fondo blanco, así cumple la proporción que exige ML) y la sube
+    al hosting de fotos de ML. Devuelve el picture id, o None si la foto es de
+    baja calidad o falló la subida."""
     try:
         contenido, ct, ext = descargar_imagen(url)
+        if not foto_calidad_ok(contenido):
+            return None
+        enc = encuadrar(contenido, 1200, 1200)
+        if enc:
+            contenido, ct, ext = enc
         r = requests.post(ML_BASE + "/pictures/items/upload",
                           headers={"Authorization": f"Bearer {token}"},
                           files={"file": (f"foto.{ext}", contenido, ct)}, timeout=60)
@@ -1059,8 +1097,12 @@ def publish_ml():
     if not item.get("family_name") and item.get("title"):
         item["family_name"] = str(item["title"])[:60]
 
-    # Re-alojar fotos en el hosting de ML para evitar rechazos por hotlink
+    # Re-alojar fotos en el hosting de ML para evitar rechazos por hotlink.
+    # Las de baja calidad se descartan (ml_subir_foto devuelve None) para que
+    # ML no rechace la publicación por "no cumple el tamaño mínimo".
     mapa_fotos = {}
+    fotos_ok = []
+    fotos_descartadas = 0
     for pic in item.get("pictures") or []:
         u = pic.get("source")
         if u:
@@ -1069,9 +1111,19 @@ def publish_ml():
                 mapa_fotos[u] = pid
                 pic.clear()
                 pic["id"] = pid
+                fotos_ok.append(pic)
+            else:
+                fotos_descartadas += 1
+    # Sólo dejamos las fotos que se subieron bien
+    if item.get("pictures"):
+        item["pictures"] = fotos_ok
     for v in item.get("variations") or []:
         if v.get("picture_ids"):
-            v["picture_ids"] = [mapa_fotos.get(u, u) for u in v["picture_ids"]]
+            v["picture_ids"] = [mapa_fotos[u] for u in v["picture_ids"] if u in mapa_fotos]
+    foto_warning = None
+    if fotos_descartadas:
+        foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) de baja "
+                        "calidad (muy chicas o borrosas) para evitar el rechazo de ML.")
 
     try:
         r = ml_post("/items", token, item)
@@ -1111,9 +1163,10 @@ def publish_ml():
                           + (f" — motivo: {motivos}" if motivos else "")
                           + ". Suele ser porque la categoría exige publicar por catálogo. "
                             "Si se da de baja, avisá para resolverlo.")
+    warnings = [w for w in (foto_warning, desc_warning, estado_warning) if w]
     return jsonify({"ok": True, "id": item_id, "permalink": creado.get("permalink"),
                     "status": estado, "sub_status": sub,
-                    "warning": desc_warning or estado_warning})
+                    "warning": " ".join(warnings) if warnings else None})
 
 
 # ---------------------------------------------------------------- Tiendanube
@@ -1206,13 +1259,19 @@ def publish_tn():
         return jsonify({"error": "Faltan store_id, token o product"}), 400
 
     # Re-alojar fotos: se descargan acá y van a TN como adjunto base64, para
-    # evitar "Remote image not found" en sitios que bloquean hotlink
+    # evitar "Remote image not found" en sitios que bloquean hotlink.
+    # Las de baja calidad (muy chicas o borrosas) se descartan para no publicar
+    # fotos que se ven pixeladas al ampliarse.
     nuevas = []
+    fotos_descartadas = 0
     for im in product.get("images") or []:
         u = im.get("src")
         if u:
             try:
                 contenido, ct, ext = descargar_imagen(u)
+                if not foto_calidad_ok(contenido):
+                    fotos_descartadas += 1
+                    continue
                 # Encuadrar a 1740x1170 (estándar Muvin en Tiendanube)
                 encuadrada = encuadrar_1740x1170(contenido)
                 if encuadrada:
@@ -1223,8 +1282,14 @@ def publish_tn():
             except Exception:
                 pass  # se deja la URL original y que TN intente
         nuevas.append(im)
+    # Si quedó al menos una foto buena, reemplazamos; si todas eran malas,
+    # dejamos las originales para no publicar sin ninguna imagen.
     if nuevas:
         product["images"] = nuevas
+    foto_warning = None
+    if fotos_descartadas:
+        foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) de baja "
+                        "calidad (muy chicas o borrosas).")
 
     try:
         r = requests.post(f"{TN_BASE}/{store_id}/products",
@@ -1239,7 +1304,8 @@ def publish_tn():
         return jsonify({"error": "Tiendanube rechazó la publicación", "detalle": detail}), 502
     creado = r.json()
     return jsonify({"ok": True, "id": creado.get("id"),
-                    "url": creado.get("canonical_url")})
+                    "url": creado.get("canonical_url"),
+                    "warning": foto_warning})
 
 
 # ------------------------------------------------- borrador y descripciones
