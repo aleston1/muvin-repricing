@@ -785,8 +785,13 @@ async function cargarFotosCandidatas(q){
     const d = await api(`/api/sync/fotos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(query)}&alt=${encodeURIComponent(W.alt || '')}&marca=${encodeURIComponent(marca)}&slug_url=${encodeURIComponent(slugUrl)}`);
     CANDIDATAS = d.fotos || [];
     if (!CANDIDATAS.length){
-      const diag = d.diag ? '<br><span style="font-size:11px;color:#c0392b">diag: '+escapeHtml(JSON.stringify(d.diag))+'</span>' : '';
-      cont.innerHTML = '<span class="hint">No se encontraron fotos — probá el buscador de arriba con otras palabras, o pegá un link.'+diag+'</span>';
+      // Sin fotos automáticas: disparar la búsqueda con IA sola (si hay key)
+      if (cfg('cfg-ai-key')){
+        cont.innerHTML = '<span class="hint">Sin fotos automáticas — buscando con IA…</span>';
+        buscarFotosIA();
+      } else {
+        cont.innerHTML = '<span class="hint">No hay fotos automáticas. Cargá la API key de Anthropic para buscar con IA, usá el buscador web de abajo, o pegá un link.</span>';
+      }
       return;
     }
     // Auto-elegir las más confiables (fabricante y catálogo, grandes) si no

@@ -978,46 +978,9 @@ def buscar_fotos():
         except Exception as e:
             diag["fabricante_error"] = str(e)[:200]
 
-    # 2) y 3) Mercado Libre (catálogo + publicaciones)
-    try:
-        results, ids_vistos = [], set()
-        for consulta in ([alt] if alt else []) + [q]:
-            data = ml_get("/sites/MLA/search", token, {"q": consulta, "limit": 10})
-            for r in data.get("results", []):
-                if r.get("id") not in ids_vistos:
-                    ids_vistos.add(r.get("id"))
-                    results.append(r)
-        diag["ml_resultados"] = len(results)
-        n0 = len(fotos)
-        for r in results:
-            cpid = r.get("catalog_product_id")
-            if not cpid or cpid in vistos:
-                continue
-            vistos.add(cpid)
-            try:
-                prod = ml_get(f"/products/{cpid}", token)
-                for p in (prod.get("pictures") or [])[:6]:
-                    url, wh = _foto_ml(p)
-                    agregar(url, wh, "Catálogo ML — " + (prod.get("name") or ""), "catalogo")
-            except Exception:
-                pass
-        ids = [r["id"] for r in results if r.get("id")][:10]
-        for i in range(0, len(ids), 20):
-            details = ml_get("/items", token, {"ids": ",".join(ids[i:i+20]),
-                                               "attributes": "id,title,pictures"})
-            for x in details:
-                if x.get("code") != 200:
-                    continue
-                for p in (x["body"].get("pictures") or [])[:3]:
-                    url, wh = _foto_ml(p)
-                    agregar(url, wh, x["body"].get("title") or "", "publicacion")
-        diag["ml_fotos"] = len(fotos) - n0
-    except Exception as e:
-        diag["ml_error"] = str(e)[:200]
-
-    # (La búsqueda web genérica se movió al endpoint /fotos/ia, que usa la IA
-    # para encontrar las imágenes reales del producto — el raspado a lo bruto
-    # devolvía fotos genéricas irrelevantes.)
+    # Nota: ML cerró su API pública de búsqueda (/sites/MLA/search → 403), así
+    # que las fotos de catálogo/publicaciones de ML ya no están disponibles.
+    # Para productos nuevos se usa la búsqueda con IA (/fotos/ia).
     orden = {"fabricante": 0, "catalogo": 1, "publicacion": 2}
     fotos.sort(key=lambda f: (f["chica"], orden.get(f["tipo"], 3)))
     return jsonify({"fotos": fotos[:40], "diag": diag})
