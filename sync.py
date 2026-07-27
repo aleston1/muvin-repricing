@@ -346,11 +346,19 @@ def parse_maestro_alt(rows):
         vals = [str(c).strip() if c is not None else "" for c in row]
         if idx is None:
             if "Código Alternativo" in vals:
+                # Código de barras (GTIN/EAN): por nombre de encabezado, y si no
+                # aparece, cae a la columna I (índice 8), donde lo tiene la planilla.
+                bc = next((i for i, v in enumerate(vals)
+                           if any(k in v.lower() for k in
+                                  ("barra", "barcode", "ean", "gtin", "cod. barra"))), None)
+                if bc is None and len(vals) > 8:
+                    bc = 8
                 idx = {
                     "alt": vals.index("Código Alternativo"),
                     "grupos": vals.index("Grupos Display") if "Grupos Display" in vals else None,
                     "ml": vals.index("ML IDs") if "ML IDs" in vals else None,
                     "tn": vals.index("TN ID") if "TN ID" in vals else None,
+                    "barcode": bc,
                     # Lista de precios de venta (ej: "Precio Lista 1") si la
                     # planilla la incorpora; el Precio Costo no cuenta
                     "precio": next((i for i, v in enumerate(vals)
@@ -372,11 +380,14 @@ def parse_maestro_alt(rows):
         if tn_raw.upper().startswith("OK"):
             digitos = re.sub(r"\D", "", tn_raw)
             tn_id = digitos or "ok"
+        # El código de barras a veces viene como float ("7791234567890.0")
+        barcode = re.sub(r"\D", "", limpiar_codigo(celda(idx.get("barcode"))))
         maestro[cod.upper()] = {
             "alt": limpiar_codigo(celda(idx["alt"])),
             "grupos": [g.strip().upper() for g in celda(idx["grupos"]).split(",") if g.strip()],
             "ml_ids": ml_ids,
             "tn_id": tn_id,
+            "barcode": barcode,
             "precio": parse_num(celda(idx["precio"])),
         }
     return maestro
@@ -407,6 +418,7 @@ def aplicar_alt(productos, maestro, precios=None):
         for v in p["variantes"]:
             m = maestro.get(v["sku"].upper()) or {}
             v["alt"] = m.get("alt", "")
+            v["barcode_hansa"] = m.get("barcode", "")
             grupos.update(m.get("grupos") or [])
             ml_ids.update(m.get("ml_ids") or [])
             tn_id = tn_id or m.get("tn_id", "")
@@ -415,6 +427,9 @@ def aplicar_alt(productos, maestro, precios=None):
         ml_ids.update(raiz.get("ml_ids") or [])
         p["alt"] = raiz.get("alt", "") or next(
             (v["alt"] for v in p["variantes"] if v.get("alt")), "")
+        # Código de barras: el del SKU raíz, o el de la primera variante que lo tenga
+        p["barcode"] = raiz.get("barcode", "") or next(
+            (v["barcode_hansa"] for v in p["variantes"] if v.get("barcode_hansa")), "")
         p["grupos"] = sorted(grupos)
         p["ml_ids_hansa"] = sorted(ml_ids)
         p["tn_id_hansa"] = tn_id or raiz.get("tn_id", "")
@@ -930,9 +945,21 @@ def ml_atributos():
     try:
         data = ml_get(f"/categories/{cat}/attributes", token)
         req = []
+        gtin_pedido = False
+        gtin_reasons = []
         for a in data:
             tags = a.get("tags") or {}
             obligatorio = tags.get("required") or tags.get("catalog_required")
+            condicional = tags.get("conditional_required")
+            # GTIN (código de barras): se maneja aparte, con su propio campo y
+            # el motivo "sin GTIN" cuando el producto no tiene código.
+            if a.get("id") == "GTIN":
+                if obligatorio or condicional:
+                    gtin_pedido = True
+                continue
+            if a.get("id") == "EMPTY_GTIN_REASON":
+                gtin_reasons = [v.get("name") for v in (a.get("values") or []) if v.get("name")]
+                continue
             if not obligatorio or a.get("id") in auto:
                 continue
             valores = [v.get("name") for v in (a.get("values") or []) if v.get("name")]
@@ -943,7 +970,8 @@ def ml_atributos():
                 "permite_otro": tags.get("allow_variations") is None,
                 "sugerido": _sugerir_valor(a.get("id"), valores),
             })
-        return jsonify({"atributos": req})
+        return jsonify({"atributos": req,
+                        "gtin": {"pedido": gtin_pedido, "motivos": gtin_reasons}})
     except Exception as e:
         return jsonify({"atributos": [], "error": str(e)})
 

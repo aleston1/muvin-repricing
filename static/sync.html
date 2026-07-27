@@ -219,6 +219,19 @@
     <div class="w-section" id="w-attrs-cat-section" style="display:none">
       <h3>Datos requeridos por la categoría de Mercado Libre</h3>
       <div class="w-row" id="w-attrs-cat"></div>
+      <div id="w-gtin-section" style="display:none;margin-top:10px">
+        <div class="w-row">
+          <div style="flex:1">
+            <label>Código de barras (GTIN / EAN)</label>
+            <input type="text" id="w-gtin" placeholder="Ej. 7791234567890 — dejalo vacío si no tiene">
+          </div>
+          <div style="flex:1">
+            <label>Si no tiene código, motivo</label>
+            <select id="w-gtin-motivo"></select>
+          </div>
+        </div>
+        <div class="hint">Mercado Libre pide el código de barras en esta categoría. Si el producto no lo tiene, elegí un motivo y se publica igual.</div>
+      </div>
       <div class="hint">Estos campos son obligatorios en la categoría elegida. Se completan una vez por producto.</div>
     </div>
 
@@ -935,16 +948,37 @@ async function usarCategoriaManual(){
   } catch(e){ hint.textContent = 'No se pudo verificar la categoría.'; }
 }
 
+let GTIN_INFO = {pedido:false, motivos:[]};
 async function cargarAtributosCategoria(){
   const cat = document.getElementById('w-categoria').value;
   const cont = document.getElementById('w-attrs-cat');
   const sec = document.getElementById('w-attrs-cat-section');
+  const gsec = document.getElementById('w-gtin-section');
+  GTIN_INFO = {pedido:false, motivos:[]};
+  gsec.style.display = 'none';
   if (!cat){ sec.style.display = 'none'; cont.innerHTML = ''; return; }
   cont.innerHTML = '<span class="hint">Consultando requisitos de la categoría…</span>';
   sec.style.display = '';
   try {
     const d = await api(`/api/sync/ml/atributos?token=${encodeURIComponent(cfg('cfg-ml-token'))}&category_id=${encodeURIComponent(cat)}&has_alt=${W.alt?'1':'0'}`);
-    if (!d.atributos || !d.atributos.length){ sec.style.display = 'none'; cont.innerHTML = ''; return; }
+    // Sección de código de barras (GTIN), si la categoría lo pide
+    GTIN_INFO = d.gtin || {pedido:false, motivos:[]};
+    if (GTIN_INFO.pedido){
+      gsec.style.display = '';
+      // Prefill con el código de barras del ERP (Maestro Items col. I) si lo hay
+      document.getElementById('w-gtin').value = (W && W.barcode) ? W.barcode : '';
+      const msel = document.getElementById('w-gtin-motivo');
+      msel.innerHTML = (GTIN_INFO.motivos||[]).map(m=>`<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')
+                       || '<option value="">(la categoría no ofrece motivo — cargá el código)</option>';
+    }
+    ATTRS_CAT = d.atributos || [];
+    if (!d.atributos || !d.atributos.length){
+      // Aunque no haya otros atributos, quizás haya que pedir GTIN: no ocultar
+      // la sección si el GTIN es requerido.
+      cont.innerHTML = GTIN_INFO.pedido ? '' : '<span class="hint">Sin datos extra requeridos.</span>';
+      if (!GTIN_INFO.pedido) sec.style.display = 'none';
+      return;
+    }
     cont.innerHTML = d.atributos.map((a,i)=>{
       const campo = a.valores && a.valores.length
         ? `<select id="wa-cat-${i}">` +
@@ -981,6 +1015,16 @@ function atributosCategoria(){
     if (val) out.push({id: a.id, value_name: val});
   });
   return out;
+}
+// Atributo de código de barras para ML: el GTIN si se cargó, o el motivo
+// "sin GTIN" que la categoría acepta cuando el producto no tiene código.
+function gtinAttr(){
+  if (!GTIN_INFO.pedido) return null;
+  const gtin = (document.getElementById('w-gtin').value||'').trim();
+  if (gtin) return {id:'GTIN', value_name: gtin};
+  const motivo = (document.getElementById('w-gtin-motivo').value||'').trim();
+  if (motivo) return {id:'EMPTY_GTIN_REASON', value_name: motivo};
+  return null;
 }
 
 async function generarDescripcion(){
@@ -1121,6 +1165,9 @@ async function publicarML(){
   }
   // Atributos obligatorios propios de la categoría (cargados en el wizard)
   atributosCategoria().forEach(a => attrsItem.push(a));
+  // Código de barras (GTIN) o motivo "sin GTIN", si la categoría lo pide
+  const gAttr = gtinAttr();
+  if (gAttr) attrsItem.push(gAttr);
   // Impuestos (obligatorios en varias categorías; valores estándar Argentina)
   attrsItem.push({id:'VALUE_ADDED_TAX', value_name:'21 %'});
   attrsItem.push({id:'IMPORT_DUTY', value_name:'0 %'});
