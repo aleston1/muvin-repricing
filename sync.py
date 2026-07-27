@@ -1039,37 +1039,45 @@ def fotos_ia():
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
         modelo = re.sub(r"\d+\s*/\s*\d+(\s*/\s*\d+)*", "", q).strip()
-        pedido = (f"Identificá el producto EXACTO: marca {marca or '(ver nombre)'}, "
-                  f"modelo '{modelo}', código de fabricante {alt or '(sin código)'}. "
-                  + (f"Página oficial: {slug}. " if slug else "")
-                  + "Buscá en el sitio oficial de la marca y en retailers serios de "
-                  "ciclismo sus fotos de producto (fondo limpio). Devolvé ÚNICAMENTE "
-                  "un array JSON con 4 a 8 URLs directas a imágenes (.jpg/.jpeg/.png/"
-                  ".webp) del producto, así: [\"https://...\", \"https://...\"]. "
-                  "Sin texto fuera del array. No inventes URLs: solo las que hayas visto.")
-        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
-                 {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 4}]
-        mensajes = [{"role": "user", "content": pedido}]
-        resp = None
-        for _ in range(6):
-            resp = client.messages.create(
-                model=os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8"),
-                max_tokens=1500, messages=mensajes, tools=tools)
-            if resp.stop_reason == "pause_turn":
-                mensajes.append({"role": "assistant", "content": resp.content})
-                continue
-            break
+        pedido = (f"Buscá en la web la página del producto EXACTO: marca "
+                  f"{marca or '(ver nombre)'}, modelo '{modelo}', código de "
+                  f"fabricante {alt or '(sin código)'} (rubro ciclismo). "
+                  + (f"Empezá por: {slug}. " if slug else "")
+                  + "Devolvé ÚNICAMENTE un array JSON con 1 a 4 URLs de PÁGINAS "
+                  "(del sitio oficial de la marca o retailers serios) donde se "
+                  "vea ese producto, ordenadas de más a menos confiable, así: "
+                  "[\"https://...\", \"https://...\"]. Sin texto fuera del array.")
+        # Una sola búsqueda con un modelo rápido; la extracción de imágenes la
+        # hace nuestro código (rápido), no la IA fetcheando páginas.
+        resp = client.messages.create(
+            model=os.environ.get("ANTHROPIC_FOTOS_MODEL", "claude-haiku-4-5"),
+            max_tokens=600,
+            messages=[{"role": "user", "content": pedido}],
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}])
         texto = "\n".join(b.text for b in resp.content
                           if getattr(b, "type", "") == "text")
         m = re.search(r"\[.*\]", texto, re.S)
-        urls = json.loads(m.group(0)) if m else []
+        paginas = json.loads(m.group(0)) if m else []
+
         vistos, fotos = set(), []
-        for u in urls:
-            if isinstance(u, str) and u.startswith("http") and u not in vistos:
-                vistos.add(u)
-                fotos.append({"url": u, "size": "", "chica": False,
-                              "fuente": "Encontrada por IA", "tipo": "ia"})
-        return jsonify({"fotos": fotos})
+        for pagina in paginas[:4]:
+            if not isinstance(pagina, str) or not pagina.startswith("http"):
+                continue
+            # Si la IA devolvió directamente una imagen, usarla
+            if re.search(r"\.(jpg|jpeg|png|webp)(\?|$)", pagina, re.I):
+                if pagina not in vistos:
+                    vistos.add(pagina)
+                    fotos.append({"url": pagina, "size": "", "chica": False,
+                                  "fuente": "Encontrada por IA", "tipo": "ia"})
+                continue
+            # Si es una página, extraer sus imágenes de producto
+            for img in _imagenes_fabricante(pagina):
+                if img not in vistos:
+                    vistos.add(img)
+                    fotos.append({"url": img, "size": "", "chica": False,
+                                  "fuente": "Encontrada por IA — " + pagina[:60],
+                                  "tipo": "ia"})
+        return jsonify({"fotos": fotos[:20]})
     except Exception as e:
         return jsonify({"fotos": [], "error": str(e)})
 
