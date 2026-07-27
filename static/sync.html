@@ -178,6 +178,11 @@
         <div style="flex:2">
           <label>Categoría ML <button class="btn btn-sm" style="padding:2px 8px" onclick="predecirCategoria()">↻ Predecir</button></label>
           <select id="w-categoria" onchange="cargarAtributosCategoria()"></select>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <input type="text" id="w-categoria-manual" placeholder="¿No la predijo? Pegá el ID (ej. MLA412445)" style="flex:1">
+            <button class="btn btn-sm" style="padding:2px 10px" onclick="usarCategoriaManual()">Usar</button>
+          </div>
+          <div class="hint" id="w-categoria-manual-hint"></div>
         </div>
         <div>
           <label>Tipo publicación ML</label>
@@ -888,7 +893,15 @@ async function predecirCategoria(){
   const t = document.getElementById('w-titulo').value || (W && W.nombre) || '';
   if (!t) return;
   try {
-    const d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(t)}`);
+    let d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(t)}`);
+    // Si el título completo no predijo nada, reintentar con algo más genérico
+    // (las 3 primeras palabras: "Cambio shifter Shimano"), que suele acertar.
+    if (!d.predicciones.length){
+      const corto = t.split(/\s+/).slice(0, 3).join(' ');
+      if (corto && corto !== t){
+        try { d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(corto)}`); } catch(e){}
+      }
+    }
     const sel = document.getElementById('w-categoria');
     if (d.predicciones.length){
       sel.innerHTML = d.predicciones.map(p =>
@@ -898,6 +911,26 @@ async function predecirCategoria(){
     }
     cargarAtributosCategoria();
   } catch(e){ /* silencioso */ }
+}
+
+// Cargar una categoría de ML a mano (cuando la predicción falla). Acepta el ID
+// que se ve en la URL de cualquier publicación parecida de ML (empieza con MLA).
+async function usarCategoriaManual(){
+  const hint = document.getElementById('w-categoria-manual-hint');
+  let id = (document.getElementById('w-categoria-manual').value || '').trim().toUpperCase();
+  const m = id.match(/MLA\d+/);
+  if (!m){ hint.textContent = 'Poné un ID válido de categoría, con formato MLA seguido de números.'; return; }
+  id = m[0];
+  hint.textContent = 'Verificando categoría…';
+  try {
+    const d = await api(`/api/sync/ml/categoria/nombre?token=${encodeURIComponent(cfg('cfg-ml-token'))}&category_id=${encodeURIComponent(id)}`);
+    if (d.error || !d.name){ hint.textContent = 'No existe una categoría con ese ID en Mercado Libre.'; return; }
+    const sel = document.getElementById('w-categoria');
+    sel.innerHTML = `<option value="${id}">${escapeHtml(d.name)} (${id})</option>`;
+    sel.value = id;
+    hint.textContent = '✓ Categoría cargada: ' + d.name;
+    cargarAtributosCategoria();
+  } catch(e){ hint.textContent = 'No se pudo verificar la categoría.'; }
 }
 
 async function cargarAtributosCategoria(){
