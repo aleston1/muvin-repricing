@@ -75,10 +75,11 @@ def descargar_imagen(url):
 
 # Umbral mínimo de calidad para las fotos de origen. Por debajo de esto la
 # imagen se ve pixelada al ampliarse y las dos plataformas la rechazan
-# ("No cumple el tamaño mínimo..."). Exigimos que el lado más corto tenga al
-# menos 500 px y el más largo al menos 800 px.
-FOTO_MIN_LADO_CORTO = 500
-FOTO_MIN_LADO_LARGO = 800
+# ("No cumple el tamaño mínimo..."). Exigimos un lado corto de al menos 600 px
+# y un lado largo de al menos 1000 px: así, al encuadrarla, casi no hace falta
+# agrandarla y no queda borrosa.
+FOTO_MIN_LADO_CORTO = 600
+FOTO_MIN_LADO_LARGO = 1000
 
 
 def dim_imagen(contenido):
@@ -100,15 +101,38 @@ def foto_calidad_ok(contenido):
     return min(w, h) >= FOTO_MIN_LADO_CORTO and max(w, h) >= FOTO_MIN_LADO_LARGO
 
 
-def encuadrar(contenido, W=1740, H=1170, margen=0.92):
+def firma_imagen(contenido):
+    """Huella del CONTENIDO visual de la imagen (miniatura 16x16 en grises).
+    Sirve para detectar fotos repetidas aunque vengan con URLs distintas o en
+    tamaños distintos, y así no subir la misma foto 2, 3 o 4 veces."""
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(contenido)).convert("L").resize((16, 16), Image.LANCZOS)
+        return bytes(img.getdata())
+    except Exception:
+        # Si no se puede decodificar, cae al hash de los bytes crudos
+        import hashlib
+        return hashlib.md5(contenido).digest()
+
+
+# Cuánto se permite agrandar una foto respecto de su tamaño real. Más que esto
+# se empieza a ver borrosa, así que es el tope aunque el usuario pida más zoom.
+FOTO_MAX_UPSCALE = 1.35
+
+
+def encuadrar(contenido, W=1740, H=1170, fill=0.92):
     """Encuadra la imagen en un lienzo WxH con fondo blanco, sin deformar.
-    Por defecto 1740x1170 (3:2, estándar Tiendanube); para ML se usa 1200x1200."""
+    Por defecto 1740x1170 (3:2, estándar Tiendanube); para ML se usa 1200x1200.
+
+    `fill` (0.5 a 1.0) es cuánto del lienzo ocupa el producto: es el 'zoom' que
+    elige el usuario. Se respeta salvo que agrandar tanto arruine la calidad:
+    nunca se supera FOTO_MAX_UPSCALE respecto del tamaño original."""
     try:
         from PIL import Image
         img = Image.open(io.BytesIO(contenido)).convert("RGB")
-        # Escala para llenar el cuadro (agranda las chicas y achica las
-        # grandes) manteniendo la proporción
-        escala = min(W * margen / img.width, H * margen / img.height)
+        fill = max(0.5, min(float(fill or 0.92), 1.0))
+        escala = min(W * fill / img.width, H * fill / img.height)
+        escala = min(escala, FOTO_MAX_UPSCALE)  # no agrandar más de la cuenta
         nw, nh = max(1, round(img.width * escala)), max(1, round(img.height * escala))
         img = img.resize((nw, nh), Image.LANCZOS)
         lienzo = Image.new("RGB", (W, H), (255, 255, 255))
@@ -120,21 +144,26 @@ def encuadrar(contenido, W=1740, H=1170, margen=0.92):
         return None
 
 
-def encuadrar_1740x1170(contenido):
+def encuadrar_1740x1170(contenido, fill=0.92):
     """Compatibilidad: encuadre estándar de Tiendanube (3:2)."""
-    return encuadrar(contenido, 1740, 1170)
+    return encuadrar(contenido, 1740, 1170, fill)
 
 
-def ml_subir_foto(token, url):
-    """Descarga la imagen, verifica su calidad, la reencuadra a un cuadrado
-    1200x1200 (fondo blanco, así cumple la proporción que exige ML) y la sube
-    al hosting de fotos de ML. Devuelve el picture id, o None si la foto es de
-    baja calidad o falló la subida."""
+def ml_subir_foto(token, url, vistas=None, fill=0.92):
+    """Descarga la imagen, verifica su calidad, descarta las repetidas (misma
+    foto ya vista), la reencuadra a un cuadrado 1200x1200 (fondo blanco, así
+    cumple la proporción que exige ML) y la sube al hosting de fotos de ML.
+    Devuelve el picture id, o None si es de baja calidad, repetida o falló."""
     try:
         contenido, ct, ext = descargar_imagen(url)
         if not foto_calidad_ok(contenido):
             return None
-        enc = encuadrar(contenido, 1200, 1200)
+        if vistas is not None:
+            firma = firma_imagen(contenido)
+            if firma in vistas:
+                return None
+            vistas.add(firma)
+        enc = encuadrar(contenido, 1200, 1200, fill)
         if enc:
             contenido, ct, ext = enc
         r = requests.post(ML_BASE + "/pictures/items/upload",
@@ -810,22 +839,49 @@ def ml_token():
                     "user_id": d.get("user_id")})
 
 
+def _variantes_query(q):
+    """Genera consultas de categoría, de la más específica a la más genérica,
+    para maximizar la chance de que ML prediga algo. Ej.:
+    'Cambio shifter Shimano CUES SL-U4010-9R (9 vel) Rapidfire' ->
+    [título completo, sin paréntesis, primeras 4/3/2 palabras]."""
+    q = (q or "").strip()
+    variantes = []
+    def agregar(v):
+        v = re.sub(r"\s+", " ", (v or "").strip())
+        if v and v.lower() not in {x.lower() for x in variantes}:
+            variantes.append(v)
+    agregar(q)
+    agregar(re.sub(r"\([^)]*\)", "", q))          # sin paréntesis
+    palabras = re.sub(r"\([^)]*\)", "", q).split()
+    for n in (4, 3, 2):
+        if len(palabras) >= n:
+            agregar(" ".join(palabras[:n]))
+    return variantes
+
+
 @sync_bp.route("/ml/categoria")
 def ml_categoria():
-    """Predicción de categoría de ML para un título."""
+    """Predicción de categoría de ML para un título. Prueba varias consultas
+    (de específica a genérica) y devuelve la primera que arroje resultados, así
+    casi nunca hace falta cargarla a mano."""
     token = request.args.get("token", os.environ.get("ML_TOKEN", ""))
     q = request.args.get("q", "")
     if not q:
         return jsonify({"error": "Falta q"}), 400
-    try:
-        data = ml_get("/sites/MLA/domain_discovery/search", token, {"q": q, "limit": 3})
-        return jsonify({"predicciones": [
-            {"category_id": d.get("category_id"), "category_name": d.get("category_name"),
-             "domain_name": d.get("domain_name")}
-            for d in data
-        ]})
-    except Exception as e:
-        return jsonify({"predicciones": [], "error": str(e)})
+    ultimo_error = None
+    for variante in _variantes_query(q):
+        try:
+            data = ml_get("/sites/MLA/domain_discovery/search", token,
+                          {"q": variante, "limit": 3})
+            if data:
+                return jsonify({"predicciones": [
+                    {"category_id": d.get("category_id"), "category_name": d.get("category_name"),
+                     "domain_name": d.get("domain_name")}
+                    for d in data
+                ], "query_usada": variante})
+        except Exception as e:
+            ultimo_error = str(e)
+    return jsonify({"predicciones": [], "error": ultimo_error})
 
 
 @sync_bp.route("/ml/categoria/nombre")
@@ -1123,10 +1179,11 @@ def publish_ml():
     mapa_fotos = {}
     fotos_ok = []
     fotos_descartadas = 0
+    vistas = set()  # firmas de fotos ya subidas, para no repetir
     for pic in item.get("pictures") or []:
         u = pic.get("source")
         if u:
-            pid = ml_subir_foto(token, u)
+            pid = ml_subir_foto(token, u, vistas, pic.get("zoom", 0.92))
             if pid:
                 mapa_fotos[u] = pid
                 pic.clear()
@@ -1142,8 +1199,8 @@ def publish_ml():
             v["picture_ids"] = [mapa_fotos[u] for u in v["picture_ids"] if u in mapa_fotos]
     foto_warning = None
     if fotos_descartadas:
-        foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) de baja "
-                        "calidad (muy chicas o borrosas) para evitar el rechazo de ML.")
+        foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) repetidas o "
+                        "de baja calidad (muy chicas o borrosas) para evitar el rechazo de ML.")
 
     try:
         r = ml_post("/items", token, item)
@@ -1280,10 +1337,11 @@ def publish_tn():
 
     # Re-alojar fotos: se descargan acá y van a TN como adjunto base64, para
     # evitar "Remote image not found" en sitios que bloquean hotlink.
-    # Las de baja calidad (muy chicas o borrosas) se descartan para no publicar
-    # fotos que se ven pixeladas al ampliarse.
+    # Se descartan las de baja calidad (se verían pixeladas) y las repetidas
+    # (misma foto con URLs distintas), para no publicar la imagen 2, 3 o 4 veces.
     nuevas = []
     fotos_descartadas = 0
+    vistas = set()  # firmas de fotos ya agregadas
     for im in product.get("images") or []:
         u = im.get("src")
         if u:
@@ -1292,8 +1350,14 @@ def publish_tn():
                 if not foto_calidad_ok(contenido):
                     fotos_descartadas += 1
                     continue
-                # Encuadrar a 1740x1170 (estándar Muvin en Tiendanube)
-                encuadrada = encuadrar_1740x1170(contenido)
+                firma = firma_imagen(contenido)
+                if firma in vistas:  # foto repetida
+                    fotos_descartadas += 1
+                    continue
+                vistas.add(firma)
+                # Encuadrar a 1740x1170 (estándar Muvin en Tiendanube),
+                # respetando el zoom que eligió el usuario para esta foto
+                encuadrada = encuadrar_1740x1170(contenido, im.get("zoom", 0.92))
                 if encuadrada:
                     contenido, ct, ext = encuadrada
                 nuevas.append({"attachment": base64.b64encode(contenido).decode(),
@@ -1308,8 +1372,8 @@ def publish_tn():
         product["images"] = nuevas
     foto_warning = None
     if fotos_descartadas:
-        foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) de baja "
-                        "calidad (muy chicas o borrosas).")
+        foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) repetidas o "
+                        "de baja calidad (muy chicas o borrosas).")
 
     try:
         r = requests.post(f"{TN_BASE}/{store_id}/products",
