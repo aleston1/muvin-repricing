@@ -947,14 +947,17 @@ def ml_atributos():
         req = []
         gtin_pedido = False
         gtin_reasons = []
+        gtin_tags = {}
+        _req_tags = ("required", "catalog_required", "conditional_required",
+                     "catalog_listing_required")
         for a in data:
             tags = a.get("tags") or {}
             obligatorio = tags.get("required") or tags.get("catalog_required")
-            condicional = tags.get("conditional_required")
             # GTIN (código de barras): se maneja aparte, con su propio campo y
             # el motivo "sin GTIN" cuando el producto no tiene código.
             if a.get("id") == "GTIN":
-                if obligatorio or condicional:
+                gtin_tags = tags
+                if any(tags.get(k) for k in _req_tags):
                     gtin_pedido = True
                 continue
             if a.get("id") == "EMPTY_GTIN_REASON":
@@ -970,8 +973,13 @@ def ml_atributos():
                 "permite_otro": tags.get("allow_variations") is None,
                 "sugerido": _sugerir_valor(a.get("id"), valores),
             })
+        # Si la categoría publica motivos "sin GTIN", es porque exige GTIN
+        # (aunque su tag no lo diga claramente): así no se nos escapa.
+        if gtin_reasons:
+            gtin_pedido = True
         return jsonify({"atributos": req,
-                        "gtin": {"pedido": gtin_pedido, "motivos": gtin_reasons}})
+                        "gtin": {"pedido": gtin_pedido, "motivos": gtin_reasons,
+                                 "tags": gtin_tags}})
     except Exception as e:
         return jsonify({"atributos": [], "error": str(e)})
 
