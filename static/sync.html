@@ -63,6 +63,14 @@
   .foto img{width:100%;height:100%;object-fit:cover}
   .foto .del{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:11px;cursor:pointer;line-height:1}
   .foto .ppal{position:absolute;bottom:0;left:0;right:0;background:rgba(26,26,26,.75);color:#fff;font-size:10px;text-align:center;padding:1px 0}
+  /* Foto elegida: preview grande con el lienzo real (3:2) y control de zoom */
+  .foto-sel{width:210px;border:1px solid #ddd;border-radius:8px;overflow:hidden;background:#fff}
+  .foto-sel .lienzo{position:relative;width:100%;aspect-ratio:3/2;background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;border-bottom:1px solid #eee}
+  .foto-sel .lienzo img{object-fit:contain;transition:max-width .05s,max-height .05s}
+  .foto-sel .del{position:absolute;top:4px;right:4px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:12px;cursor:pointer;line-height:1;z-index:2}
+  .foto-sel .ppal{position:absolute;bottom:4px;left:4px;background:rgba(26,26,26,.8);color:#fff;font-size:10px;padding:1px 6px;border-radius:4px}
+  .foto-sel .zoom{display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:11px;color:#666}
+  .foto-sel .zoom input[type=range]{flex:1}
   .foto-cand{cursor:pointer;border:2px solid transparent;transition:border-color .1s}
   .foto-cand:hover{border-color:#1a1a1a}
   .foto-cand.usada{opacity:.35;cursor:default}
@@ -691,6 +699,7 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<
 // ------------------------------------------------------------ wizard
 let W = null; // producto en edición
 let FOTOS = [];
+let FOTO_ZOOM = {}; // zoom (fracción del lienzo que ocupa el producto) por URL
 let ATTRS_CAT = []; // atributos obligatorios de la categoría ML elegida
 
 async function abrirWizard(raiz){
@@ -698,6 +707,7 @@ async function abrirWizard(raiz){
   if (!W) return;
   if (!EQUIV) await cargarEquivalencias();
   FOTOS = [];
+  FOTO_ZOOM = {};
   document.getElementById('w-titulo-modal').textContent = 'Preparar publicación — ' + raiz;
   document.getElementById('w-sub').textContent = (W.nombre || '') +
     (W.alt ? ' — Código fabricante: ' + W.alt : '');
@@ -893,15 +903,7 @@ async function predecirCategoria(){
   const t = document.getElementById('w-titulo').value || (W && W.nombre) || '';
   if (!t) return;
   try {
-    let d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(t)}`);
-    // Si el título completo no predijo nada, reintentar con algo más genérico
-    // (las 3 primeras palabras: "Cambio shifter Shimano"), que suele acertar.
-    if (!d.predicciones.length){
-      const corto = t.split(/\s+/).slice(0, 3).join(' ');
-      if (corto && corto !== t){
-        try { d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(corto)}`); } catch(e){}
-      }
-    }
+    const d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(t)}`);
     const sel = document.getElementById('w-categoria');
     if (d.predicciones.length){
       sel.innerHTML = d.predicciones.map(p =>
@@ -1021,15 +1023,35 @@ function agregarFoto(){
   renderFotos();
 }
 function quitarFoto(i){ FOTOS.splice(i,1); renderFotos(); renderCandidatas(); }
+function zoomFoto(i, val){
+  const u = FOTOS[i]; if (u===undefined) return;
+  FOTO_ZOOM[u] = val/100;
+  const img = document.getElementById('foto-sel-img-'+i);
+  if (img){ img.style.maxWidth = val+'%'; img.style.maxHeight = val+'%'; }
+  const et = document.getElementById('foto-sel-zval-'+i);
+  if (et) et.textContent = val+'%';
+}
 function renderFotos(){
   const cont = document.getElementById('w-fotos');
   if (!FOTOS.length){ cont.innerHTML = '<span class="hint">Todavía no elegiste ninguna.</span>'; return; }
-  cont.innerHTML = FOTOS.map((u,i)=>`
-    <div class="foto">
-      <img src="${escapeHtml(u)}" onerror="this.style.opacity=.2" alt="">
-      <button class="del" onclick="quitarFoto(${i})">×</button>
-      ${i===0?'<div class="ppal">principal</div>':''}
-    </div>`).join('');
+  cont.innerHTML = FOTOS.map((u,i)=>{
+    const pct = Math.round(((FOTO_ZOOM[u] || 0.92)) * 100);
+    return `
+    <div class="foto-sel">
+      <div class="lienzo">
+        <img id="foto-sel-img-${i}" src="${escapeHtml(u)}" style="max-width:${pct}%;max-height:${pct}%"
+             onerror="this.style.opacity=.2" alt="">
+        <button class="del" onclick="quitarFoto(${i})">×</button>
+        ${i===0?'<div class="ppal">principal</div>':''}
+      </div>
+      <div class="zoom">
+        <span>Zoom</span>
+        <input type="range" min="60" max="100" value="${pct}"
+               oninput="zoomFoto(${i}, this.value)">
+        <span id="foto-sel-zval-${i}">${pct}%</span>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // Variantes seleccionadas del wizard
@@ -1087,7 +1109,7 @@ async function publicarML(){
     buying_mode: 'buy_it_now',
     condition: 'new',
     listing_type_id: document.getElementById('w-listing').value,
-    pictures: FOTOS.map(u=>({source:u})),
+    pictures: FOTOS.map(u=>({source:u, zoom: FOTO_ZOOM[u] || 0.92})),
   };
   const marca = document.getElementById('w-marca').value.trim();
   const attrsItem = [];
@@ -1190,7 +1212,7 @@ async function publicarTN(){
   const product = {
     name: {es: titulo},
     description: {es: textoAHtml(descTxt)},
-    images: FOTOS.map(u=>({src:u})),
+    images: FOTOS.map(u=>({src:u, zoom: FOTO_ZOOM[u] || 0.92})),
     published: document.getElementById('w-tn-pub').value === 'true',
   };
   // SEO: título = nombre del producto (+ marca); descripción = resumen corto
