@@ -1443,9 +1443,11 @@ def describe():
         if datos:
             contenido += f"\nDatos adicionales del usuario:\n{datos}"
 
-        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
-                 {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 3}]
-        model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
+        # Equilibrado: Sonnet + menos investigación (más barato y rápido que
+        # Opus, calidad muy buena). Configurable por variable de entorno.
+        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 2},
+                 {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 2}]
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 
         def generar(tools_param):
             mensajes = [{"role": "user", "content": contenido}]
