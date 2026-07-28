@@ -914,18 +914,36 @@ function tituloCount(){
 
 async function predecirCategoria(){
   const t = document.getElementById('w-titulo').value || (W && W.nombre) || '';
+  const hint = document.getElementById('w-categoria-manual-hint');
   if (!t) return;
+  if (!cfg('cfg-ml-token')){
+    hint.textContent = 'Falta el token de Mercado Libre en Configuración (no tiene nada que ver con los créditos de la IA).';
+    return;
+  }
+  hint.textContent = 'Prediciendo categoría…';
   try {
     const d = await api(`/api/sync/ml/categoria?token=${encodeURIComponent(cfg('cfg-ml-token'))}&q=${encodeURIComponent(t)}`);
     const sel = document.getElementById('w-categoria');
     if (d.predicciones.length){
       sel.innerHTML = d.predicciones.map(p =>
         `<option value="${p.category_id}">${escapeHtml(p.category_name || p.domain_name || p.category_id)} (${p.category_id})</option>`).join('');
+      hint.textContent = '';
     } else {
       sel.innerHTML = '<option value="">Sin predicción — revisar manualmente</option>';
+      // Mostrar el motivo real para no adivinar (token vencido, etc.)
+      const err = d.error || '';
+      if (/401|invalid|token|forbidden|403/i.test(err)){
+        hint.textContent = 'Mercado Libre no aceptó el token (suele estar vencido). Reconectá ML en Configuración.';
+      } else if (err){
+        hint.textContent = 'Mercado Libre no devolvió categoría: ' + err;
+      } else {
+        hint.textContent = 'Mercado Libre no encontró una categoría para este título. Pegá el ID a mano abajo.';
+      }
     }
     cargarAtributosCategoria();
-  } catch(e){ /* silencioso */ }
+  } catch(e){
+    hint.textContent = 'No se pudo predecir la categoría: ' + e.message;
+  }
 }
 
 // Cargar una categoría de ML a mano (cuando la predicción falla). Acepta el ID
