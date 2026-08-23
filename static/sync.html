@@ -608,7 +608,10 @@ async function analizar(){
       progress('Sin credenciales de Tiendanube: se compara solo contra Mercado Libre.');
     }
 
-    ROWS = Object.values(STOCK).map(p => {
+    ROWS = Object.values(STOCK)
+      // Los SKU que empiezan con "B" no se listan (a pedido de Muvin)
+      .filter(p => !/^b/i.test((p.sku_raiz || '').trim()))
+      .map(p => {
       const ml = (ML[p.sku_raiz] || []).slice();
       const tn = (TN[p.sku_raiz] || []).slice();
       // Respaldo: los vínculos que Hansa ya tiene con cada plataforma
@@ -622,7 +625,7 @@ async function analizar(){
         tn.push({id: p.tn_id_hansa, url: '', published: true, hansa: true});
       }
       return {...p, ml, tn};
-    }).sort((a,b) => b.stock_total - a.stock_total);
+    }).sort((a,b) => (a.sku_raiz || '').localeCompare(b.sku_raiz || '', undefined, {numeric:true, sensitivity:'base'}));
 
     document.getElementById('stats').style.display = '';
     document.getElementById('filtros').style.display = '';
