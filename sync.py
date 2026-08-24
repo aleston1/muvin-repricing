@@ -1597,7 +1597,7 @@ def tn_reencuadrar():
     except Exception as e:
         return jsonify({"error": f"No se pudo leer el producto: {e}"}), 502
 
-    arregladas, ya_ok, fallidas = 0, 0, 0
+    arregladas, ya_ok, fallidas, ultimo_error = 0, 0, 0, None
     for im in imgs:
         src = im.get("src")
         if not src or not im.get("id"):
@@ -1617,23 +1617,25 @@ def tn_reencuadrar():
                 fallidas += 1
                 continue
             nuevo, _, next_ext = enc
-            # Agregar la versión encuadrada en la misma posición y borrar la vieja
+            # Agregar la versión encuadrada y borrar la vieja
             ra = requests.post(f"{TN_BASE}/{store_id}/products/{product_id}/images",
                                headers=tn_headers(token),
                                json={"attachment": base64.b64encode(nuevo).decode(),
-                                     "filename": f"foto-{im.get('id')}.{next_ext}",
-                                     "position": im.get("position")}, timeout=60)
+                                     "filename": f"foto-{im.get('id')}.{next_ext}"},
+                               timeout=60)
             if ra.status_code not in (200, 201):
                 fallidas += 1
+                ultimo_error = f"TN {ra.status_code}: {ra.text[:300]}"
                 continue
             requests.delete(f"{TN_BASE}/{store_id}/products/{product_id}/images/{im['id']}",
                             headers=tn_headers(token), timeout=20)
             arregladas += 1
-        except Exception:
+        except Exception as e:
             fallidas += 1
+            ultimo_error = str(e)[:300]
 
     return jsonify({"ok": True, "arregladas": arregladas, "ya_ok": ya_ok,
-                    "fallidas": fallidas})
+                    "fallidas": fallidas, "detalle": ultimo_error})
 
 
 @sync_bp.route("/tn/reemplazar-fotos", methods=["POST"])
@@ -1684,19 +1686,21 @@ def tn_reemplazar_fotos():
     except Exception as e:
         return jsonify({"error": f"No se pudo leer el producto: {e}"}), 502
 
-    subidas = 0
+    subidas, ultimo_error = 0, None
     for i, (b64, ext) in enumerate(nuevas):
         try:
             ra = requests.post(f"{TN_BASE}/{store_id}/products/{product_id}/images",
                                headers=tn_headers(token),
-                               json={"attachment": b64, "filename": f"foto-{i+1}.{ext}",
-                                     "position": i + 1}, timeout=60)
+                               json={"attachment": b64, "filename": f"foto-{i+1}.{ext}"},
+                               timeout=60)
             if ra.status_code in (200, 201):
                 subidas += 1
-        except Exception:
-            pass
+            else:
+                ultimo_error = f"TN {ra.status_code}: {ra.text[:300]}"
+        except Exception as e:
+            ultimo_error = str(e)[:300]
     if not subidas:
-        return jsonify({"error": "No se pudieron subir las fotos nuevas."}), 502
+        return jsonify({"error": "No se pudieron subir las fotos nuevas. " + (ultimo_error or "")}), 502
     # Recién ahora borramos las viejas (para no dejar el producto sin imágenes)
     for vid in viejas:
         try:
