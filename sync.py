@@ -1518,6 +1518,60 @@ def tn_fotos():
         return jsonify({"fotos": [], "error": str(e)})
 
 
+@sync_bp.route("/tn/reencuadrar", methods=["POST"])
+def tn_reencuadrar():
+    """Re-encuadra a 1740x1170 las fotos de un producto YA publicado en TN que
+    no estén en esa medida (las que se subieron antes del arreglo y rompen la
+    grilla). Reemplaza cada foto fuera de medida por su versión encuadrada."""
+    body       = request.json or {}
+    store_id   = body.get("store_id", os.environ.get("TN_STORE_ID", ""))
+    token      = body.get("token", os.environ.get("TN_TOKEN", ""))
+    product_id = body.get("product_id", "")
+    if not store_id or not token or not product_id:
+        return jsonify({"error": "Faltan store_id, token o product_id"}), 400
+    try:
+        r = requests.get(f"{TN_BASE}/{store_id}/products/{product_id}",
+                         headers=tn_headers(token), params={"fields": "id,images"},
+                         timeout=20)
+        r.raise_for_status()
+        imgs = sorted(r.json().get("images") or [], key=lambda x: x.get("position") or 0)
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer el producto: {e}"}), 502
+
+    arregladas, ya_ok, fallidas = 0, 0, 0
+    for im in imgs:
+        src = im.get("src")
+        if not src or not im.get("id"):
+            continue
+        try:
+            contenido, ct, ext = descargar_imagen(src)
+            if dim_imagen(contenido) == (1740, 1170):
+                ya_ok += 1
+                continue
+            enc = encuadrar_1740x1170(contenido)
+            if not enc:
+                fallidas += 1
+                continue
+            nuevo, _, next_ext = enc
+            # Agregar la versión encuadrada en la misma posición y borrar la vieja
+            ra = requests.post(f"{TN_BASE}/{store_id}/products/{product_id}/images",
+                               headers=tn_headers(token),
+                               json={"attachment": base64.b64encode(nuevo).decode(),
+                                     "filename": f"foto-{im.get('id')}.{next_ext}",
+                                     "position": im.get("position")}, timeout=60)
+            if ra.status_code not in (200, 201):
+                fallidas += 1
+                continue
+            requests.delete(f"{TN_BASE}/{store_id}/products/{product_id}/images/{im['id']}",
+                            headers=tn_headers(token), timeout=20)
+            arregladas += 1
+        except Exception:
+            fallidas += 1
+
+    return jsonify({"ok": True, "arregladas": arregladas, "ya_ok": ya_ok,
+                    "fallidas": fallidas})
+
+
 @sync_bp.route("/publish/tn", methods=["POST"])
 def publish_tn():
     body     = request.json or {}
