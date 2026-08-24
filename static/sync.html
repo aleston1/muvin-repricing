@@ -296,6 +296,13 @@
       </div>
       <label style="font-size:12px;color:#666;margin-top:8px;display:block">Fotos elegidas (la primera es la principal)</label>
       <div class="fotos-grid" id="w-fotos"><span class="hint">Todavía no elegiste ninguna.</span></div>
+      <div id="w-reencuadrar-box" style="display:none;margin-top:10px;padding:8px;border:1px dashed #f0c36d;border-radius:8px;background:#fff9ec">
+        <span style="font-size:13px;color:#8a6d3b">Este producto ya está en Tiendanube. Si alguna foto quedó fuera de medida y desalinea la grilla de la tienda, arreglala sin republicar:</span>
+        <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-sm" onclick="reencuadrarTN()" id="btn-reencuadrar">🔧 Re-encuadrar fotos en Tiendanube (1740x1170)</button>
+          <span class="hint" id="w-reencuadrar-hint"></span>
+        </div>
+      </div>
     </div>
 
     <div class="result-box" id="w-result"></div>
@@ -793,6 +800,11 @@ async function abrirWizard(raiz){
 
   document.getElementById('wizard-bg').classList.add('open');
 
+  // Mostrar el arreglo de fotos solo si el producto ya está en Tiendanube
+  const reBox = document.getElementById('w-reencuadrar-box');
+  reBox.style.display = (W.tn && W.tn.length && cfg('cfg-tn-store') && cfg('cfg-tn-token')) ? '' : 'none';
+  document.getElementById('w-reencuadrar-hint').textContent = '';
+
   // Si el producto ya existe en la otra plataforma, precargar sus fotos
   cargarFotosExistentes();
 
@@ -1146,6 +1158,29 @@ function subirFotosArchivo(input){
     reader.readAsDataURL(file);
   });
   input.value = '';  // permitir volver a elegir el mismo archivo
+}
+// Re-encuadrar a 1740x1170 las fotos ya publicadas en TN de este producto
+async function reencuadrarTN(){
+  if (!W.tn || !W.tn.length) return;
+  const btn = document.getElementById('btn-reencuadrar');
+  const hint = document.getElementById('w-reencuadrar-hint');
+  btn.disabled = true; btn.textContent = 'Arreglando fotos…';
+  hint.textContent = 'Descargando y reencuadrando (puede tardar)…';
+  try {
+    const d = await api('/api/sync/tn/reencuadrar', {method:'POST', headers:{'Content-Type':'application/json'},
+      timeout: 160000,
+      body: JSON.stringify({store_id: cfg('cfg-tn-store'), token: cfg('cfg-tn-token'), product_id: W.tn[0].id})});
+    if (d.error){ hint.textContent = '❌ ' + d.error; return; }
+    const partes = [];
+    if (d.arregladas) partes.push(d.arregladas + ' arreglada(s)');
+    if (d.ya_ok) partes.push(d.ya_ok + ' ya estaban bien');
+    if (d.fallidas) partes.push(d.fallidas + ' fallaron');
+    hint.textContent = '✓ ' + (partes.join(' · ') || 'Sin cambios') + '. Refrescá la tienda para verlo.';
+  } catch(e){
+    hint.textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '🔧 Re-encuadrar fotos en Tiendanube (1740x1170)';
+  }
 }
 // Clave de agrupación de la foto de una fila de variante: por COLOR si la
 // variante tiene atributo Color (así todos los talles de ese color comparten
