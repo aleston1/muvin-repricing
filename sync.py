@@ -1214,14 +1214,15 @@ def _aspecto_ok(w, h):
 
 
 def foto_candidata_ok(contenido):
-    """Una candidata sirve si tiene buena resolución y proporción sana.
-    Es un poco más permisiva que el umbral de publicación, pero descarta
-    íconos, logos y banners por tamaño/forma."""
+    """Una candidata sirve si se PODRÁ publicar (mismo umbral que la publicación)
+    y tiene proporción sana. Así lo que se muestra en la grilla es exactamente lo
+    que después se puede publicar (antes se sugerían fotos que luego se
+    descartaban por chicas, dejando la publicación sin imágenes)."""
     dim = dim_imagen(contenido)
     if not dim:
         return False
     w, h = dim
-    return min(w, h) >= 450 and _aspecto_ok(w, h)
+    return foto_calidad_ok(contenido) and _aspecto_ok(w, h)
 
 
 def _verificar_fotos(urls, limite=8, max_bajar=16):
@@ -1755,13 +1756,21 @@ def publish_tn():
         except Exception:
             # No se pudo bajar/procesar: se descarta (no se publica sin encuadrar)
             fotos_descartadas += 1
-    # Siempre publicamos SOLO las fotos ya encuadradas a 1740x1170 (nunca las
-    # originales sin procesar). Si ninguna quedó, va sin imágenes con aviso.
-    product["images"] = nuevas
+    # Publicamos SOLO fotos ya encuadradas a 1740x1170 (nunca las originales).
+    entraron = len(product.get("images") or [])
     foto_warning = None
-    if fotos_descartadas:
-        foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) repetidas o "
-                        "de baja calidad (muy chicas o borrosas).")
+    if nuevas:
+        product["images"] = nuevas
+        if fotos_descartadas:
+            foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) repetidas o "
+                            "de baja calidad (muy chicas o borrosas).")
+    else:
+        # Ninguna foto se pudo procesar: no mandamos images:[] y avisamos fuerte
+        product.pop("images", None)
+        if entraron:
+            foto_warning = ("⚠ Ninguna de las fotos elegidas se pudo publicar (todas "
+                            "muy chicas: se necesitan ~1000px de lado). El producto se "
+                            "publicó SIN fotos: subí una imagen más grande.")
 
     try:
         r = requests.post(f"{TN_BASE}/{store_id}/products",
