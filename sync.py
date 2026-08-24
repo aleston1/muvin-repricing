@@ -1480,7 +1480,8 @@ def publish_tn():
     # (misma foto con URLs distintas), para no publicar la imagen 2, 3 o 4 veces.
     nuevas = []
     fotos_descartadas = 0
-    vistas = set()  # firmas de fotos ya agregadas
+    vistas = {}      # firma -> posición (1-based) de la foto que quedó
+    pos_por_src = {}  # src original -> posición en la lista final de imágenes
     for im in product.get("images") or []:
         u = im.get("src")
         if u:
@@ -1490,10 +1491,9 @@ def publish_tn():
                     fotos_descartadas += 1
                     continue
                 firma = firma_imagen(contenido)
-                if firma in vistas:  # foto repetida
-                    fotos_descartadas += 1
+                if firma in vistas:  # foto repetida: apunta a la que ya quedó
+                    pos_por_src[u] = vistas[firma]
                     continue
-                vistas.add(firma)
                 # Encuadrar a 1740x1170 (estándar Muvin en Tiendanube),
                 # respetando el zoom que eligió el usuario para esta foto
                 encuadrada = encuadrar_1740x1170(contenido, im.get("zoom", 0.92))
@@ -1501,10 +1501,14 @@ def publish_tn():
                     contenido, ct, ext = encuadrada
                 nuevas.append({"attachment": base64.b64encode(contenido).decode(),
                                "filename": f"foto-{len(nuevas)+1}.{ext}"})
+                vistas[firma] = len(nuevas)     # posición 1-based
+                pos_por_src[u] = len(nuevas)
                 continue
             except Exception:
                 pass  # se deja la URL original y que TN intente
         nuevas.append(im)
+        if u:
+            pos_por_src[u] = len(nuevas)
     # Si quedó al menos una foto buena, reemplazamos; si todas eran malas,
     # dejamos las originales para no publicar sin ninguna imagen.
     if nuevas:
@@ -1526,6 +1530,32 @@ def publish_tn():
             detail = r.text[:500]
         return jsonify({"error": "Tiendanube rechazó la publicación", "detalle": detail}), 502
     creado = r.json()
+
+    # Asignar la foto específica a cada variante (si el usuario cargó alguna).
+    # TN asigna los ids de imagen al crear, así que recién ahora podemos
+    # vincular cada variante con su imagen (por posición) vía un PUT.
+    variant_fotos = body.get("variant_fotos") or {}
+    if variant_fotos and creado.get("id"):
+        try:
+            id_por_pos = {im.get("position"): im.get("id")
+                          for im in creado.get("images") or [] if im.get("id")}
+            pid = creado["id"]
+            for var in creado.get("variants") or []:
+                src = variant_fotos.get(var.get("sku"))
+                if not src:
+                    continue
+                img_id = id_por_pos.get(pos_por_src.get(src))
+                if not img_id:
+                    continue
+                try:
+                    requests.put(f"{TN_BASE}/{store_id}/products/{pid}/variants/{var['id']}",
+                                 headers=tn_headers(token), json={"image_id": img_id},
+                                 timeout=20)
+                except requests.RequestException:
+                    pass
+        except Exception:
+            pass  # el producto ya está creado; la asignación por variante es un extra
+
     return jsonify({"ok": True, "id": creado.get("id"),
                     "url": creado.get("canonical_url"),
                     "warning": foto_warning})

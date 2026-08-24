@@ -242,9 +242,9 @@
         </label>
       </h3>
       <table class="var-table"><thead><tr>
-        <th>SKU</th><th>Sufijo</th><th>Atributo 1</th><th>Valor 1</th><th>Atributo 2</th><th>Valor 2</th><th style="text-align:right">Stock</th><th></th>
+        <th>SKU</th><th>Sufijo</th><th>Atributo 1</th><th>Valor 1</th><th>Atributo 2</th><th>Valor 2</th><th style="text-align:right">Stock</th><th>Foto</th><th></th>
       </tr></thead><tbody id="w-var-tbody"></tbody></table>
-      <div class="hint">Precargado desde la planilla de equivalencias. El atributo 2 es opcional (ej: color + talle). Destildá las variantes que no quieras publicar.</div>
+      <div class="hint">Precargado desde la planilla de equivalencias. El atributo 2 es opcional (ej: color + talle). Destildá las variantes que no quieras publicar. La columna <b>Foto</b> es opcional: subí una imagen específica por variante (ej. cada color); las fotos generales de abajo se comparten en todas.</div>
     </div>
 
     <div class="w-section">
@@ -718,6 +718,7 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<
 let W = null; // producto en edición
 let FOTOS = [];
 let FOTO_ZOOM = {}; // zoom (fracción del lienzo que ocupa el producto) por URL
+let FOTO_VAR = {};  // foto específica por variante: {sku: dataURL/url}
 let ATTRS_CAT = []; // atributos obligatorios de la categoría ML elegida
 
 async function abrirWizard(raiz){
@@ -726,6 +727,7 @@ async function abrirWizard(raiz){
   if (!EQUIV) await cargarEquivalencias();
   FOTOS = [];
   FOTO_ZOOM = {};
+  FOTO_VAR = {};
   document.getElementById('w-titulo-modal').textContent = 'Preparar publicación — ' + raiz;
   document.getElementById('w-sub').textContent = (W.nombre || '') +
     (W.alt ? ' — Código fabricante: ' + W.alt : '');
@@ -771,6 +773,7 @@ async function abrirWizard(raiz){
       const partes = partesSufijo(v.sufijo);
       const p1 = partes[0] || {atributo:'Color', valor:v.sufijo};
       const p2 = partes[1] || {atributo:'', valor:''};
+      const fv = FOTO_VAR[v.sku];
       return `<tr>
         <td style="font-family:monospace">${v.sku}</td>
         <td style="font-family:monospace">${v.sufijo}</td>
@@ -779,6 +782,10 @@ async function abrirWizard(raiz){
         <td>${selAttr('va2-'+i, p2.atributo, true)}</td>
         <td><input type="text" id="vv2-${i}" value="${escapeHtml(p2.valor)}"></td>
         <td style="text-align:right">${fmtStock(v.stock)}</td>
+        <td>
+          <img id="fv-thumb-${i}" src="${fv||''}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid #ddd;vertical-align:middle;${fv?'':'display:none'}">
+          <input type="file" accept="image/*" style="width:120px;font-size:11px" onchange="subirFotoVar('${v.sku}', ${i}, this)">
+        </td>
         <td><input type="checkbox" id="vi-${i}"${v.stock>0?' checked':''}></td>
       </tr>`;
     }).join('');
@@ -1139,6 +1146,29 @@ function subirFotosArchivo(input){
   });
   input.value = '';  // permitir volver a elegir el mismo archivo
 }
+// Foto específica de una variante (subida desde la compu)
+function subirFotoVar(sku, i, input){
+  const file = (input.files || [])[0];
+  if (!file || !file.type.startsWith('image/')){ return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const dataUrl = e.target.result;
+    const img = new Image();
+    img.onload = () => {
+      if (Math.min(img.width, img.height) < 600 || Math.max(img.width, img.height) < 1000){
+        alert('Esa foto es muy chica (se necesita ~1000px de lado). Probá con una más grande.');
+        input.value = '';
+        return;
+      }
+      FOTO_VAR[sku] = dataUrl;
+      const thumb = document.getElementById('fv-thumb-'+i);
+      if (thumb){ thumb.src = dataUrl; thumb.style.display = ''; }
+    };
+    img.src = dataUrl;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
 function finArchivo(agregadas, chicas, hint){
   renderFotos();
   let msg = agregadas ? ('✓ ' + agregadas + ' foto(s) agregada(s).') : '';
@@ -1188,6 +1218,7 @@ function variantesSeleccionadas(){
       {atributo: document.getElementById('va1-'+i).value, valor: document.getElementById('vv1-'+i).value.trim()},
       {atributo: document.getElementById('va2-'+i).value, valor: document.getElementById('vv2-'+i).value.trim()},
     ].filter(p => p.atributo && p.valor),
+    foto: FOTO_VAR[v.sku] || '',   // foto específica de la variante (opcional)
     incluir: document.getElementById('vi-'+i).checked,
   })).filter(v => v.incluir && v.pares.length);
 }
@@ -1197,7 +1228,7 @@ function validarComun(){
   const precio = parseFloat(document.getElementById('w-precio').value);
   if (!titulo) return 'Falta el título.';
   if (!precio || precio <= 0) return 'Falta el precio.';
-  if (!FOTOS.length) return 'Agregá al menos una foto aprobada.';
+  if (!FOTOS.length && !Object.keys(FOTO_VAR).length) return 'Agregá al menos una foto (general o por variante).';
   if (!document.getElementById('w-desc').value.trim()) return 'Falta la descripción (podés generarla con el botón).';
   return null;
 }
@@ -1231,6 +1262,11 @@ async function publicarML(){
   const precio = parseFloat(document.getElementById('w-precio').value);
   const vars = variantesSeleccionadas();
 
+  // Pool de fotos = generales + las específicas de cada variante (sin repetir).
+  // Cada variante después referencia primero la suya y luego las generales.
+  const fotosVar = vars.map(v=>v.foto).filter(Boolean);
+  const poolFotos = FOTOS.concat(fotosVar.filter(u => !FOTOS.includes(u)));
+
   const item = {
     title: document.getElementById('w-titulo').value.trim(),
     category_id: catId,
@@ -1239,7 +1275,7 @@ async function publicarML(){
     buying_mode: 'buy_it_now',
     condition: 'new',
     listing_type_id: document.getElementById('w-listing').value,
-    pictures: FOTOS.map(u=>({source:u, zoom: FOTO_ZOOM[u] || 0.92})),
+    pictures: poolFotos.map(u=>({source:u, zoom: FOTO_ZOOM[u] || 0.92})),
   };
   const marca = document.getElementById('w-marca').value.trim();
   const attrsItem = [];
@@ -1273,7 +1309,8 @@ async function publicarML(){
           p.atributo === 'Color' ? {id:'COLOR', value_name:p.valor} :
           p.atributo === 'Talle' ? {id:'SIZE',  value_name:p.valor} :
           {name: p.atributo, value_name: p.valor}),
-        picture_ids: FOTOS,
+        // Primero la foto propia de la variante (si tiene), después las generales
+        picture_ids: (v.foto ? [v.foto] : []).concat(FOTOS),
       };
       // ML exige el GTIN dentro de cada variante (usa el código de barras de
       // la variante si lo tiene; si no, el motivo "sin GTIN")
@@ -1359,10 +1396,13 @@ async function publicarTN(){
   };
   const titulo = document.getElementById('w-titulo').value.trim();
   const descTxt = descConCodigo();
+  // Pool de fotos = generales + las específicas de cada variante (sin repetir)
+  const fotosVar = vars.map(v=>v.foto).filter(Boolean);
+  const poolFotos = FOTOS.concat(fotosVar.filter(u => !FOTOS.includes(u)));
   const product = {
     name: {es: titulo},
     description: {es: textoAHtml(descTxt)},
-    images: FOTOS.map(u=>({src:u, zoom: FOTO_ZOOM[u] || 0.92})),
+    images: poolFotos.map(u=>({src:u, zoom: FOTO_ZOOM[u] || 0.92})),
     published: document.getElementById('w-tn-pub').value === 'true',
   };
   // SEO: título = nombre del producto (+ marca); descripción = resumen corto
@@ -1395,11 +1435,15 @@ async function publicarTN(){
     }];
   }
 
+  // Foto específica por variante: {sku: src}; el backend la asigna tras crear
+  const variantFotos = {};
+  vars.forEach(v => { if (v.foto) variantFotos[v.sku] = v.foto; });
+
   const btn = document.getElementById('btn-pub-tn');
   btn.disabled = true; btn.textContent = 'Publicando...';
   try {
     const d = await api('/api/sync/publish/tn', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({store_id: cfg('cfg-tn-store'), token: cfg('cfg-tn-token'), product})});
+      body: JSON.stringify({store_id: cfg('cfg-tn-store'), token: cfg('cfg-tn-token'), product, variant_fotos: variantFotos})});
     const link = d.url ? `<a href="${d.url}" target="_blank" rel="noopener">${d.id}</a>` : d.id;
     const aviso = d.warning ? `<br><small>⚠ ${escapeHtml(d.warning)}</small>` : '';
     mostrarResultado(true, `✓ Publicado en Tiendanube: ${link}${aviso}`);
