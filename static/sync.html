@@ -801,6 +801,12 @@ async function cargarFotosExistentes(){
   try {
     if (W.tn && W.tn.length && cfg('cfg-tn-store') && cfg('cfg-tn-token')){
       const d = await api(`/api/sync/tn/fotos?store_id=${encodeURIComponent(cfg('cfg-tn-store'))}&token=${encodeURIComponent(cfg('cfg-tn-token'))}&product_id=${encodeURIComponent(W.tn[0].id)}`);
+      // Si ya está en Tiendanube, reusamos su descripción (no hace falta gastar IA)
+      const descEl = document.getElementById('w-desc');
+      if (d.descripcion && !descEl.value.trim()){
+        descEl.value = d.descripcion;
+        document.getElementById('w-desc-hint').textContent = 'Descripción traída de Tiendanube (ya publicada). Podés editarla antes de publicar en Mercado Libre.';
+      }
       if (d.fotos && d.fotos.length){
         FOTOS = d.fotos.slice(0, 10);
         renderFotos(); renderCandidatas();

@@ -1392,10 +1392,28 @@ def get_tn():
         return jsonify({"error": str(e)}), 500
 
 
+def html_a_texto(html):
+    """Convierte la descripción HTML de Tiendanube a texto plano, conservando
+    saltos de línea y viñetas, para poder reusarla/editarla en el wizard."""
+    if not html:
+        return ""
+    t = html
+    t = re.sub(r"(?i)<\s*br\s*/?>", "\n", t)
+    t = re.sub(r"(?i)</\s*(p|div|h[1-6])\s*>", "\n\n", t)
+    t = re.sub(r"(?i)<\s*li[^>]*>", "- ", t)
+    t = re.sub(r"(?i)</\s*li\s*>", "\n", t)
+    t = re.sub(r"<[^>]+>", "", t)                    # resto de tags
+    import html as _htmlmod
+    t = _htmlmod.unescape(t)
+    t = re.sub(r"[ \t]+\n", "\n", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+
 @sync_bp.route("/tn/fotos")
 def tn_fotos():
-    """Fotos de un producto ya publicado en Tiendanube (para reutilizarlas
-    al publicar el mismo producto en ML)."""
+    """Fotos y descripción de un producto ya publicado en Tiendanube (para
+    reutilizarlas al publicar el mismo producto en ML)."""
     store_id   = request.args.get("store_id", os.environ.get("TN_STORE_ID", ""))
     token      = request.args.get("token", os.environ.get("TN_TOKEN", ""))
     product_id = request.args.get("product_id", "")
@@ -1403,11 +1421,20 @@ def tn_fotos():
         return jsonify({"fotos": [], "error": "Faltan parámetros"})
     try:
         r = requests.get(f"{TN_BASE}/{store_id}/products/{product_id}",
-                         headers=tn_headers(token), params={"fields": "id,images"},
+                         headers=tn_headers(token),
+                         params={"fields": "id,images,description"},
                          timeout=20)
         r.raise_for_status()
         p = r.json()
-        return jsonify({"fotos": [im.get("src") for im in p.get("images") or [] if im.get("src")]})
+        desc = p.get("description") or {}
+        # description viene por idioma {es: "<p>..."}; tomamos es o el primero
+        desc_html = desc.get("es") if isinstance(desc, dict) else desc
+        if isinstance(desc, dict) and not desc_html:
+            desc_html = next((v for v in desc.values() if v), "")
+        return jsonify({
+            "fotos": [im.get("src") for im in p.get("images") or [] if im.get("src")],
+            "descripcion": html_a_texto(desc_html),
+        })
     except Exception as e:
         return jsonify({"fotos": [], "error": str(e)})
 
