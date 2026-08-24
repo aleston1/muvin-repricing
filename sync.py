@@ -133,6 +133,39 @@ def firma_imagen(contenido):
 FOTO_MAX_UPSCALE = 1.35
 
 
+def _esquinas_oscuras(img):
+    """True si al menos 3 de las 4 esquinas son casi negras: señal de que la
+    foto tiene fondo negro (transparencia que se aplanó mal en su momento)."""
+    try:
+        w, h = img.size
+        pts = [(1, 1), (w - 2, 1), (1, h - 2), (w - 2, h - 2)]
+        return sum(1 for p in pts if sum(img.getpixel(p)[:3]) < 60) >= 3
+    except Exception:
+        return False
+
+
+def aclarar_fondo_negro(contenido):
+    """Convierte un fondo negro sólido en blanco (flood fill desde las 4
+    esquinas). Sirve para recuperar fotos que quedaron con fondo negro. Devuelve
+    bytes JPEG, o None si no hacía falta / no se pudo."""
+    try:
+        from PIL import Image, ImageDraw
+        img = Image.open(io.BytesIO(contenido)).convert("RGB")
+        if not _esquinas_oscuras(img):
+            return None
+        w, h = img.size
+        for c in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
+            try:
+                ImageDraw.floodfill(img, c, (255, 255, 255), thresh=45)
+            except Exception:
+                pass
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=95)
+        return out.getvalue()
+    except Exception:
+        return None
+
+
 def encuadrar(contenido, W=1740, H=1170, fill=0.92):
     """Encuadra la imagen en un lienzo WxH con fondo blanco, sin deformar.
     Por defecto 1740x1170 (3:2, estándar Tiendanube); para ML se usa 1200x1200.
@@ -142,7 +175,14 @@ def encuadrar(contenido, W=1740, H=1170, fill=0.92):
     nunca se supera FOTO_MAX_UPSCALE respecto del tamaño original."""
     try:
         from PIL import Image
-        img = Image.open(io.BytesIO(contenido)).convert("RGB")
+        img = Image.open(io.BytesIO(contenido))
+        # Si la imagen tiene transparencia (PNG/WebP), la aplanamos sobre BLANCO.
+        # Con un simple convert("RGB"), PIL rellena lo transparente con NEGRO.
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            fondo = Image.new("RGBA", img.size, (255, 255, 255, 255))
+            img = Image.alpha_composite(fondo, img.convert("RGBA")).convert("RGB")
+        else:
+            img = img.convert("RGB")
         fill = max(0.5, min(float(fill or 0.92), 1.0))
         escala = min(W * fill / img.width, H * fill / img.height)
         escala = min(escala, FOTO_MAX_UPSCALE)  # no agrandar más de la cuenta
@@ -1545,8 +1585,13 @@ def tn_reencuadrar():
             continue
         try:
             contenido, ct, ext = descargar_imagen(src)
-            if dim_imagen(contenido) == (1740, 1170):
-                ya_ok += 1
+            # Aclarar un fondo negro (foto que quedó con transparencia aplanada
+            # en negro) antes de decidir si hace falta reencuadrar
+            aclarada = aclarar_fondo_negro(contenido)
+            if aclarada:
+                contenido = aclarada
+            elif dim_imagen(contenido) == (1740, 1170):
+                ya_ok += 1  # ya está en medida y sin fondo negro
                 continue
             enc = encuadrar_1740x1170(contenido)
             if not enc:
