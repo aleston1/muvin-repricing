@@ -925,6 +925,19 @@ def ml_categoria():
     return jsonify({"predicciones": [], "error": ultimo_error})
 
 
+def _categoria_info(token, cat):
+    """Nombre y ruta de una categoría por su ID, o None si no existe."""
+    try:
+        data = ml_get(f"/categories/{cat}", token, {})
+        nombre = data.get("name") if isinstance(data, dict) else None
+        if not nombre:
+            return None
+        ruta = " > ".join(p.get("name", "") for p in (data.get("path_from_root") or []))
+        return {"name": nombre, "ruta": ruta}
+    except Exception:
+        return None
+
+
 @sync_bp.route("/ml/categoria/nombre")
 def ml_categoria_nombre():
     """Nombre de una categoría de ML a partir de su ID (para validar la carga
@@ -933,16 +946,47 @@ def ml_categoria_nombre():
     cat   = request.args.get("category_id", "").strip()
     if not cat:
         return jsonify({"error": "Falta category_id"}), 400
-    try:
-        data = ml_get(f"/categories/{cat}", token, {})
-        nombre = data.get("name") if isinstance(data, dict) else None
-        if not nombre:
-            return jsonify({"error": "categoría inexistente"})
-        # path_from_root ayuda a confirmar que es la correcta (ej. "Bicicletas > ...")
-        ruta = " > ".join(p.get("name", "") for p in (data.get("path_from_root") or []))
-        return jsonify({"name": nombre, "ruta": ruta})
-    except Exception as e:
-        return jsonify({"error": str(e)})
+    info = _categoria_info(token, cat)
+    if not info:
+        return jsonify({"error": "categoría inexistente"})
+    return jsonify(info)
+
+
+@sync_bp.route("/ml/categoria/resolver")
+def ml_categoria_resolver():
+    """Resuelve la categoría a partir de un valor que puede ser:
+    - un ID de categoría (MLA412445), o
+    - el número/ID/link de una PUBLICACIÓN de ML similar (MLA3735766706,
+      3735766706, o la URL): en ese caso se toma la categoría de esa publicación.
+    Así el usuario puede 'copiar' la categoría de un producto parecido."""
+    token = request.args.get("token", os.environ.get("ML_TOKEN", ""))
+    valor = (request.args.get("valor", "") or "").strip().upper()
+    m = re.search(r"MLA-?(\d+)", valor) or re.search(r"(\d{5,})", valor)
+    if not m:
+        return jsonify({"error": "No reconocí un ID. Pegá un ID de categoría (MLA...) o el número/link de una publicación de ML."})
+    digitos = re.sub(r"\D", "", m.group(0))
+    idc = "MLA" + digitos
+    # Las categorías tienen pocos dígitos; las publicaciones, muchos (>=8).
+    # Se prueba en el orden más probable y, si falla, al revés.
+    modos = ["item", "categoria"] if len(digitos) >= 8 else ["categoria", "item"]
+    for modo in modos:
+        if modo == "categoria":
+            info = _categoria_info(token, idc)
+            if info:
+                return jsonify({"category_id": idc, "name": info["name"],
+                                "ruta": info["ruta"], "via": "categoría"})
+        else:
+            try:
+                item = ml_get(f"/items/{idc}", token, {"attributes": "category_id,title"})
+                cat = item.get("category_id") if isinstance(item, dict) else None
+                if cat:
+                    info = _categoria_info(token, cat) or {"name": cat, "ruta": ""}
+                    return jsonify({"category_id": cat, "name": info["name"],
+                                    "ruta": info["ruta"], "via": "publicación",
+                                    "titulo_publicacion": item.get("title", "")})
+            except Exception:
+                pass
+    return jsonify({"error": "No pude resolver la categoría con ese valor (¿es una publicación tuya o un ID válido?)."})
 
 
 # Atributos que la app ya completa sola (marca, impuestos, paquete, SKU, MPN):
