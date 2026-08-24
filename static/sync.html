@@ -870,7 +870,11 @@ async function buscarFotosIA(){
         slug_url: slugUrl, api_key: cfg('cfg-ai-key'),
       })});
     if (!d.fotos || !d.fotos.length){
-      aviso.textContent = 'La IA no encontró fotos claras — probá el buscador de ML o pegá un link.' + (d.error?(' ('+d.error+')'):'');
+      if (esErrorDeSaldo(d.error)){
+        aviso.textContent = mensajeSaldo();
+      } else {
+        aviso.textContent = 'La IA no encontró fotos claras — probá el buscador de ML o pegá un link.' + (d.error?(' ('+d.error+')'):'');
+      }
       return;
     }
     // Sumar al principio de las candidatas (son las más confiables)
@@ -1047,6 +1051,14 @@ function gtinAttr(barcode){
   return null;
 }
 
+// Detecta el error de "sin saldo" de Anthropic (viene dentro del texto crudo)
+function esErrorDeSaldo(txt){
+  return /credit balance is too low|insufficient|billing|quota/i.test(txt || '');
+}
+function mensajeSaldo(){
+  return '⚠ Se agotó el saldo de la API de Anthropic. Cargá créditos en console.anthropic.com → Plans & Billing y volvé a intentar. (La descripción y las fotos con IA no funcionan sin saldo.)';
+}
+
 async function generarDescripcion(){
   const btn = document.getElementById('btn-describir');
   btn.disabled = true; btn.textContent = 'Investigando el producto…';
@@ -1069,7 +1081,7 @@ async function generarDescripcion(){
     document.getElementById('w-desc').value = d.texto;
     document.getElementById('w-desc-hint').textContent = d.generado_con_ia
       ? 'Generada con IA a partir de fuentes web — revisá que las specs sean correctas antes de publicar.'
-      : (d.warning || 'Plantilla básica.');
+      : (esErrorDeSaldo(d.warning) ? mensajeSaldo() : (d.warning || 'Plantilla básica.'));
   } catch(e){
     document.getElementById('w-desc-hint').textContent = '❌ '+e.message;
   } finally {
