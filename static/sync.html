@@ -242,9 +242,9 @@
         </label>
       </h3>
       <table class="var-table"><thead><tr>
-        <th>SKU</th><th>Sufijo</th><th>Atributo 1</th><th>Valor 1</th><th>Atributo 2</th><th>Valor 2</th><th style="text-align:right">Stock</th><th>Foto</th><th></th>
+        <th>SKU</th><th>Sufijo</th><th>Atributo 1</th><th>Valor 1</th><th>Atributo 2</th><th>Valor 2</th><th style="text-align:right">Stock</th><th>Foto (por color)</th><th></th>
       </tr></thead><tbody id="w-var-tbody"></tbody></table>
-      <div class="hint">Precargado desde la planilla de equivalencias. El atributo 2 es opcional (ej: color + talle). Destildá las variantes que no quieras publicar. La columna <b>Foto</b> es opcional: subí una imagen específica por variante (ej. cada color); las fotos generales de abajo se comparten en todas.</div>
+      <div class="hint">Precargado desde la planilla de equivalencias. El atributo 2 es opcional (ej: color + talle). Destildá las variantes que no quieras publicar. La columna <b>Foto</b> es opcional y se agrupa <b>por color</b>: la imagen que subas a un color se aplica a todos sus talles. Las fotos generales de abajo se comparten en todas.</div>
     </div>
 
     <div class="w-section">
@@ -773,7 +773,6 @@ async function abrirWizard(raiz){
       const partes = partesSufijo(v.sufijo);
       const p1 = partes[0] || {atributo:'Color', valor:v.sufijo};
       const p2 = partes[1] || {atributo:'', valor:''};
-      const fv = FOTO_VAR[v.sku];
       return `<tr>
         <td style="font-family:monospace">${v.sku}</td>
         <td style="font-family:monospace">${v.sufijo}</td>
@@ -783,12 +782,13 @@ async function abrirWizard(raiz){
         <td><input type="text" id="vv2-${i}" value="${escapeHtml(p2.valor)}"></td>
         <td style="text-align:right">${fmtStock(v.stock)}</td>
         <td>
-          <img id="fv-thumb-${i}" src="${fv||''}" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid #ddd;vertical-align:middle;${fv?'':'display:none'}">
-          <input type="file" accept="image/*" style="width:120px;font-size:11px" onchange="subirFotoVar('${v.sku}', ${i}, this)">
+          <img id="fv-thumb-${i}" src="" style="width:34px;height:34px;object-fit:cover;border-radius:5px;border:1px solid #ddd;vertical-align:middle;display:none">
+          <input type="file" accept="image/*" style="width:120px;font-size:11px" onchange="subirFotoVar(${i}, this)">
         </td>
         <td><input type="checkbox" id="vi-${i}"${v.stock>0?' checked':''}></td>
       </tr>`;
     }).join('');
+    actualizarThumbsVar();
   }
 
   document.getElementById('wizard-bg').classList.add('open');
@@ -1146,10 +1146,33 @@ function subirFotosArchivo(input){
   });
   input.value = '';  // permitir volver a elegir el mismo archivo
 }
-// Foto específica de una variante (subida desde la compu)
-function subirFotoVar(sku, i, input){
+// Clave de agrupación de la foto de una fila de variante: por COLOR si la
+// variante tiene atributo Color (así todos los talles de ese color comparten
+// la foto); si no tiene color, cae a la variante puntual (por sufijo).
+function fotoKey(i){
+  const a1 = document.getElementById('va1-'+i), v1 = document.getElementById('vv1-'+i);
+  const a2 = document.getElementById('va2-'+i), v2 = document.getElementById('vv2-'+i);
+  if (a1 && a1.value === 'Color' && v1 && v1.value.trim()) return 'color:'+v1.value.trim().toLowerCase();
+  if (a2 && a2.value === 'Color' && v2 && v2.value.trim()) return 'color:'+v2.value.trim().toLowerCase();
+  const vs = W.variantes.filter(x=>x.sufijo)[i];
+  return 'suf:'+(vs ? vs.sufijo : i);
+}
+// Refresca las miniaturas de todas las filas según la foto de su color
+function actualizarThumbsVar(){
+  const n = W.variantes.filter(x=>x.sufijo).length;
+  for (let i=0;i<n;i++){
+    const thumb = document.getElementById('fv-thumb-'+i);
+    if (!thumb) continue;
+    const src = FOTO_VAR[fotoKey(i)];
+    if (src){ thumb.src = src; thumb.style.display = ''; }
+    else { thumb.src = ''; thumb.style.display = 'none'; }
+  }
+}
+// Subir la foto de un color (se aplica a todos los talles de ese color)
+function subirFotoVar(i, input){
   const file = (input.files || [])[0];
   if (!file || !file.type.startsWith('image/')){ return; }
+  const key = fotoKey(i);
   const reader = new FileReader();
   reader.onload = e => {
     const dataUrl = e.target.result;
@@ -1160,9 +1183,8 @@ function subirFotoVar(sku, i, input){
         input.value = '';
         return;
       }
-      FOTO_VAR[sku] = dataUrl;
-      const thumb = document.getElementById('fv-thumb-'+i);
-      if (thumb){ thumb.src = dataUrl; thumb.style.display = ''; }
+      FOTO_VAR[key] = dataUrl;
+      actualizarThumbsVar();
     };
     img.src = dataUrl;
   };
@@ -1218,7 +1240,7 @@ function variantesSeleccionadas(){
       {atributo: document.getElementById('va1-'+i).value, valor: document.getElementById('vv1-'+i).value.trim()},
       {atributo: document.getElementById('va2-'+i).value, valor: document.getElementById('vv2-'+i).value.trim()},
     ].filter(p => p.atributo && p.valor),
-    foto: FOTO_VAR[v.sku] || '',   // foto específica de la variante (opcional)
+    foto: FOTO_VAR[fotoKey(i)] || '',   // foto del color (compartida por talles)
     incluir: document.getElementById('vi-'+i).checked,
   })).filter(v => v.incluir && v.pares.length);
 }
