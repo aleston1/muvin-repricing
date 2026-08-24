@@ -309,19 +309,32 @@ def parse_num(v):
 def parse_stock_rows(rows):
     """Filas crudas de la planilla -> productos agrupados por SKU raíz.
 
-    Columnas: código, descripción, código de barras, 3 columnas de stock
-    vendible y una columna de notas (NO-VENTA, TALLER, etc. — se ignora
-    para el stock vendible).
+    Columnas: código, descripción, código de barras, y varias columnas de stock
+    por depósito. La plataforma sólo debe ver el stock del depósito LOYOLA: se
+    detecta esa columna por su encabezado y se usa únicamente esa. Si no se
+    encuentra (planilla con otro formato), se cae a sumar las columnas 3-5.
     """
     productos = {}
+    idx_loyola = None
     for row in rows:
-        codigo = (row[0] if len(row) > 0 else "") or ""
-        codigo = str(codigo).strip()
+        vals = [str(c).strip() if c is not None else "" for c in row]
+        codigo = vals[0] if vals else ""
+        # Detectar la columna del depósito LOYOLA en el encabezado (sólo entre
+        # las columnas de stock, de la 3 en adelante, para no confundir con un
+        # nombre de producto que diga "loyola").
+        if idx_loyola is None:
+            for i in range(3, len(vals)):
+                if "loyola" in vals[i].lower():
+                    idx_loyola = i
+                    break
         if not codigo or "sincronización" in codigo.lower() or codigo.lower().startswith("código"):
             continue
         nombre  = str((row[1] if len(row) > 1 else "") or "").strip()
         barcode = str((row[2] if len(row) > 2 else "") or "").strip()
-        stock   = sum(parse_num(row[i]) for i in (3, 4, 5) if len(row) > i)
+        if idx_loyola is not None:
+            stock = parse_num(row[idx_loyola]) if len(row) > idx_loyola else 0
+        else:
+            stock = sum(parse_num(row[i]) for i in (3, 4, 5) if len(row) > i)
         raiz, _, sufijo = codigo.partition(".")
         raiz = raiz.strip().upper()
         p = productos.setdefault(raiz, {
