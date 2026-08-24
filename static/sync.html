@@ -270,7 +270,12 @@
         <button class="btn btn-sm" onclick="buscarMasFotos()">🔍 Buscar</button>
         <button class="btn btn-sm btn-green" id="btn-fotos-ia" onclick="buscarFotosIA()">✨ Buscar fotos con IA</button>
       </div>
-      <label style="font-size:12px;color:#666">Hacé clic en las fotos que quieras usar (arriba quedan las elegidas)</label>
+      <div style="margin-bottom:8px;padding:8px;border:1px dashed #b7dfbf;border-radius:8px;background:#f3faf5">
+        <label style="font-size:13px;color:#1e7e34;font-weight:600;display:block;margin-bottom:4px">📁 Subir fotos desde tu computadora</label>
+        <input type="file" id="w-foto-file" accept="image/*" multiple onchange="subirFotosArchivo(this)">
+        <span class="hint" id="w-foto-file-hint" style="display:block;margin-top:4px">La forma más fácil: elegí una o varias imágenes de tu compu y quedan listas para publicar.</span>
+      </div>
+      <label style="font-size:12px;color:#666">O buscá y hacé clic en las fotos que quieras usar (arriba quedan las elegidas)</label>
       <div class="fotos-grid" id="w-fotos-cand"><span class="hint">Buscando fotos…</span></div>
       <div class="w-row" style="align-items:flex-end;margin-top:8px">
         <div style="flex:2">
@@ -1103,6 +1108,42 @@ function agregarFoto(){
   FOTOS.push(url);
   document.getElementById('w-foto-url').value = '';
   renderFotos();
+}
+// Subir fotos desde la compu: se leen como data URL y quedan listas para publicar
+function subirFotosArchivo(input){
+  const hint = document.getElementById('w-foto-file-hint');
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  let pendientes = files.length, agregadas = 0, chicas = 0;
+  hint.textContent = 'Cargando ' + files.length + ' foto(s)…';
+  files.forEach(file => {
+    if (!file.type.startsWith('image/')){ pendientes--; return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const dataUrl = e.target.result;
+      // Chequear tamaño mínimo antes de aceptarla (para no publicar borrosas)
+      const img = new Image();
+      img.onload = () => {
+        if (Math.min(img.width, img.height) < 600 || Math.max(img.width, img.height) < 1000){
+          chicas++;
+        } else if (!FOTOS.includes(dataUrl)){
+          FOTOS.push(dataUrl); agregadas++;
+        }
+        if (--pendientes === 0) finArchivo(agregadas, chicas, hint);
+      };
+      img.onerror = () => { if (--pendientes === 0) finArchivo(agregadas, chicas, hint); };
+      img.src = dataUrl;
+    };
+    reader.onerror = () => { if (--pendientes === 0) finArchivo(agregadas, chicas, hint); };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';  // permitir volver a elegir el mismo archivo
+}
+function finArchivo(agregadas, chicas, hint){
+  renderFotos();
+  let msg = agregadas ? ('✓ ' + agregadas + ' foto(s) agregada(s).') : '';
+  if (chicas) msg += ' ⚠ ' + chicas + ' se descartaron por ser muy chicas (se necesita ~1000px de lado para que no salga pixelada).';
+  hint.textContent = msg || 'No se agregó ninguna foto.';
 }
 function quitarFoto(i){ FOTOS.splice(i,1); renderFotos(); renderCandidatas(); }
 function zoomFoto(i, val){
