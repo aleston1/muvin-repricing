@@ -59,6 +59,19 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 
 def descargar_imagen(url):
+    # Imágenes subidas por el usuario desde su compu: llegan como data URI
+    # (data:image/jpeg;base64,....). Se decodifican sin ir a la red.
+    if isinstance(url, str) and url.startswith("data:"):
+        cabecera, _, datos = url.partition(",")
+        ct = "image/jpeg"
+        m = re.match(r"data:([^;]+)", cabecera)
+        if m:
+            ct = m.group(1).lower()
+        contenido = base64.b64decode(datos) if "base64" in cabecera else \
+            urllib.parse.unquote_to_bytes(datos)
+        ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+               "image/gif": "gif"}.get(ct, "jpg")
+        return contenido, ct, ext
     r = requests.get(url, headers={"User-Agent": BROWSER_UA, "Accept": "image/*,*/*;q=0.8",
                                    "Referer": url},
                      timeout=25, allow_redirects=True)
