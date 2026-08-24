@@ -666,7 +666,7 @@ function render(){
     tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Sin resultados con estos filtros.</td></tr>';
     return;
   }
-  tbody.innerHTML = rows.slice(0, 500).map(r => {
+  tbody.innerHTML = rows.map(r => {
     const ESTADOS_ML = {active:'activa', paused:'pausada', under_review:'en revisión', inactive:'incompleta', hansa:'vínculo Hansa'};
     const mlCell = r.ml.length
       ? r.ml.map(i=>`<a class="link-ml" href="${i.permalink||'#'}" target="_blank" rel="noopener">✓ ${ESTADOS_ML[i.status]||i.status}</a>`).join('<br>')
@@ -686,9 +686,6 @@ function render(){
       <td>${falta ? `<button class="btn btn-sm btn-primary" onclick="abrirWizard('${r.sku_raiz}')">Preparar</button>` : ''}</td>
     </tr>`;
   }).join('');
-  if (rows.length > 500){
-    tbody.innerHTML += `<tr class="empty-row"><td colspan="7">Mostrando 500 de ${rows.length} — afiná la búsqueda.</td></tr>`;
-  }
 }
 function fmtStock(n){ return Number.isInteger(n) ? n : n.toFixed(2); }
 function debugItem(){
