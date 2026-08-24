@@ -45,13 +45,21 @@ def get_sku_raiz(item):
         return str(sku).strip()[:6]
     return None
 
+def _sin_cache(resp):
+    """Evita que el navegador sirva una versión vieja de la página tras un
+    deploy: siempre revalida contra el servidor."""
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
 @app.route("/")
 def index():
-    return app.send_static_file("index.html")
+    return _sin_cache(app.send_static_file("index.html"))
 
 @app.route("/sync")
 def sync_page():
-    return app.send_static_file("sync.html")
+    return _sin_cache(app.send_static_file("sync.html"))
 
 @app.route("/api/items")
 def get_items():
