@@ -297,11 +297,13 @@
       <label style="font-size:12px;color:#666;margin-top:8px;display:block">Fotos elegidas (la primera es la principal)</label>
       <div class="fotos-grid" id="w-fotos"><span class="hint">Todavía no elegiste ninguna.</span></div>
       <div id="w-reencuadrar-box" style="display:none;margin-top:10px;padding:8px;border:1px dashed #f0c36d;border-radius:8px;background:#fff9ec">
-        <span style="font-size:13px;color:#8a6d3b">Este producto ya está en Tiendanube. Si alguna foto quedó fuera de medida y desalinea la grilla de la tienda, arreglala sin republicar:</span>
+        <span style="font-size:13px;color:#8a6d3b">Este producto ya está en Tiendanube. Arreglá sus fotos sin republicar:</span>
         <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-sm" onclick="reencuadrarTN()" id="btn-reencuadrar">🔧 Re-encuadrar fotos en Tiendanube (1740x1170)</button>
+          <button class="btn btn-sm" onclick="reencuadrarTN()" id="btn-reencuadrar">🔧 Re-encuadrar fotos (1740x1170)</button>
+          <button class="btn btn-sm" onclick="reemplazarFotosTN()" id="btn-reemplazar-fotos">🖼️ Reemplazar por las fotos elegidas arriba</button>
           <span class="hint" id="w-reencuadrar-hint"></span>
         </div>
+        <span class="hint" style="display:block;margin-top:4px">Usá "Reemplazar" cuando la foto quedó mal (ej. fondo negro): elegí/subí una foto nueva arriba y reemplazá las de la tienda.</span>
       </div>
     </div>
 
@@ -1180,6 +1182,31 @@ async function reencuadrarTN(){
     hint.textContent = '❌ ' + e.message;
   } finally {
     btn.disabled = false; btn.textContent = '🔧 Re-encuadrar fotos en Tiendanube (1740x1170)';
+  }
+}
+// Reemplazar TODAS las fotos del producto en TN por las elegidas arriba
+async function reemplazarFotosTN(){
+  if (!W.tn || !W.tn.length) return;
+  if (!FOTOS.length){
+    document.getElementById('w-reencuadrar-hint').textContent = '❌ Elegí o subí al menos una foto nueva arriba antes de reemplazar.';
+    return;
+  }
+  if (!confirm('Esto reemplaza TODAS las fotos de este producto en Tiendanube por las elegidas arriba. ¿Seguir?')) return;
+  const btn = document.getElementById('btn-reemplazar-fotos');
+  const hint = document.getElementById('w-reencuadrar-hint');
+  btn.disabled = true; btn.textContent = 'Reemplazando…';
+  hint.textContent = 'Subiendo las fotos nuevas…';
+  try {
+    const d = await api('/api/sync/tn/reemplazar-fotos', {method:'POST', headers:{'Content-Type':'application/json'},
+      timeout: 160000,
+      body: JSON.stringify({store_id: cfg('cfg-tn-store'), token: cfg('cfg-tn-token'),
+        product_id: W.tn[0].id, images: FOTOS.map(u=>({src:u, zoom: FOTO_ZOOM[u] || 0.92}))})});
+    if (d.error){ hint.textContent = '❌ ' + d.error; return; }
+    hint.textContent = `✓ ${d.subidas} foto(s) nueva(s), ${d.borradas} vieja(s) borrada(s). Refrescá la tienda.`;
+  } catch(e){
+    hint.textContent = '❌ ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '🖼️ Reemplazar por las fotos elegidas arriba';
   }
 }
 // Clave de agrupación de la foto de una fila de variante: por COLOR si la

@@ -144,21 +144,40 @@ def _esquinas_oscuras(img):
         return False
 
 
+def _ratio_blanco(img):
+    """Fracción de la imagen que quedó casi blanca (para detectar si el flood
+    fill se comió el producto)."""
+    try:
+        chico = img.resize((40, 40))
+        px = list(chico.getdata())
+        blancos = sum(1 for p in px if sum(p[:3]) > 720)
+        return blancos / max(1, len(px))
+    except Exception:
+        return 0.0
+
+
 def aclarar_fondo_negro(contenido):
     """Convierte un fondo negro sólido en blanco (flood fill desde las 4
-    esquinas). Sirve para recuperar fotos que quedaron con fondo negro. Devuelve
-    bytes JPEG, o None si no hacía falta / no se pudo."""
+    esquinas). Sirve para recuperar fotos que quedaron con fondo negro, PERO
+    solo si el producto es claro: si el flood fill se termina comiendo casi toda
+    la imagen (producto oscuro sobre negro), se aborta para no borrarla.
+    Devuelve bytes JPEG, o None si no hacía falta / no era seguro."""
     try:
         from PIL import Image, ImageDraw
         img = Image.open(io.BytesIO(contenido)).convert("RGB")
         if not _esquinas_oscuras(img):
             return None
+        blanco_antes = _ratio_blanco(img)
         w, h = img.size
         for c in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]:
             try:
                 ImageDraw.floodfill(img, c, (255, 255, 255), thresh=45)
             except Exception:
                 pass
+        # Freno de seguridad: si el relleno dejó casi todo blanco, el producto
+        # era oscuro y se lo comió -> abortar (mejor dejar la foto como estaba).
+        if _ratio_blanco(img) - blanco_antes > 0.5 or _ratio_blanco(img) > 0.9:
+            return None
         out = io.BytesIO()
         img.save(out, format="JPEG", quality=95)
         return out.getvalue()
@@ -1615,6 +1634,77 @@ def tn_reencuadrar():
 
     return jsonify({"ok": True, "arregladas": arregladas, "ya_ok": ya_ok,
                     "fallidas": fallidas})
+
+
+@sync_bp.route("/tn/reemplazar-fotos", methods=["POST"])
+def tn_reemplazar_fotos():
+    """Reemplaza TODAS las fotos de un producto ya publicado en TN por las
+    imágenes elegidas (encuadradas a 1740x1170). Sirve para arreglar un producto
+    cuya foto quedó mal (ej. fondo negro) subiendo una nueva."""
+    body       = request.json or {}
+    store_id   = body.get("store_id", os.environ.get("TN_STORE_ID", ""))
+    token      = body.get("token", os.environ.get("TN_TOKEN", ""))
+    product_id = body.get("product_id", "")
+    imagenes   = body.get("images") or []
+    if not store_id or not token or not product_id:
+        return jsonify({"error": "Faltan store_id, token o product_id"}), 400
+    if not imagenes:
+        return jsonify({"error": "No hay fotos elegidas para reemplazar"}), 400
+
+    # Encuadrar las nuevas (fondo blanco), descartando chicas y repetidas
+    nuevas, vistas = [], set()
+    for im in imagenes:
+        u = im.get("src")
+        if not u:
+            continue
+        try:
+            contenido, ct, ext = descargar_imagen(u)
+            if not foto_calidad_ok(contenido):
+                continue
+            firma = firma_imagen(contenido)
+            if firma in vistas:
+                continue
+            vistas.add(firma)
+            enc = encuadrar_1740x1170(contenido, im.get("zoom", 0.92))
+            if not enc:
+                continue
+            nuevo, _, next_ext = enc
+            nuevas.append((base64.b64encode(nuevo).decode(), next_ext))
+        except Exception:
+            continue
+    if not nuevas:
+        return jsonify({"error": "Ninguna foto elegida sirvió (muy chicas o no se pudieron bajar)."}), 400
+
+    # IDs de las fotos actuales (para borrarlas después de subir las nuevas)
+    try:
+        r = requests.get(f"{TN_BASE}/{store_id}/products/{product_id}",
+                         headers=tn_headers(token), params={"fields": "id,images"}, timeout=20)
+        r.raise_for_status()
+        viejas = [im.get("id") for im in r.json().get("images") or [] if im.get("id")]
+    except Exception as e:
+        return jsonify({"error": f"No se pudo leer el producto: {e}"}), 502
+
+    subidas = 0
+    for i, (b64, ext) in enumerate(nuevas):
+        try:
+            ra = requests.post(f"{TN_BASE}/{store_id}/products/{product_id}/images",
+                               headers=tn_headers(token),
+                               json={"attachment": b64, "filename": f"foto-{i+1}.{ext}",
+                                     "position": i + 1}, timeout=60)
+            if ra.status_code in (200, 201):
+                subidas += 1
+        except Exception:
+            pass
+    if not subidas:
+        return jsonify({"error": "No se pudieron subir las fotos nuevas."}), 502
+    # Recién ahora borramos las viejas (para no dejar el producto sin imágenes)
+    for vid in viejas:
+        try:
+            requests.delete(f"{TN_BASE}/{store_id}/products/{product_id}/images/{vid}",
+                            headers=tn_headers(token), timeout=20)
+        except Exception:
+            pass
+    return jsonify({"ok": True, "subidas": subidas, "borradas": len(viejas)})
 
 
 @sync_bp.route("/publish/tn", methods=["POST"])
