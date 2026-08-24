@@ -1537,35 +1537,34 @@ def publish_tn():
     pos_por_src = {}  # src original -> posición en la lista final de imágenes
     for im in product.get("images") or []:
         u = im.get("src")
-        if u:
-            try:
-                contenido, ct, ext = descargar_imagen(u)
-                if not foto_calidad_ok(contenido):
-                    fotos_descartadas += 1
-                    continue
-                firma = firma_imagen(contenido)
-                if firma in vistas:  # foto repetida: apunta a la que ya quedó
-                    pos_por_src[u] = vistas[firma]
-                    continue
-                # Encuadrar a 1740x1170 (estándar Muvin en Tiendanube),
-                # respetando el zoom que eligió el usuario para esta foto
-                encuadrada = encuadrar_1740x1170(contenido, im.get("zoom", 0.92))
-                if encuadrada:
-                    contenido, ct, ext = encuadrada
-                nuevas.append({"attachment": base64.b64encode(contenido).decode(),
-                               "filename": f"foto-{len(nuevas)+1}.{ext}"})
-                vistas[firma] = len(nuevas)     # posición 1-based
-                pos_por_src[u] = len(nuevas)
+        if not u:
+            continue
+        try:
+            contenido, ct, ext = descargar_imagen(u)
+            if not foto_calidad_ok(contenido):
+                fotos_descartadas += 1
                 continue
-            except Exception:
-                pass  # se deja la URL original y que TN intente
-        nuevas.append(im)
-        if u:
+            firma = firma_imagen(contenido)
+            if firma in vistas:  # foto repetida: apunta a la que ya quedó
+                pos_por_src[u] = vistas[firma]
+                continue
+            # Encuadrar a 1740x1170 (estándar Muvin en Tiendanube), respetando
+            # el zoom elegido. Si el encuadre falla, NO se publica sin encuadrar.
+            encuadrada = encuadrar_1740x1170(contenido, im.get("zoom", 0.92))
+            if not encuadrada:
+                fotos_descartadas += 1
+                continue
+            contenido, ct, ext = encuadrada
+            nuevas.append({"attachment": base64.b64encode(contenido).decode(),
+                           "filename": f"foto-{len(nuevas)+1}.{ext}"})
+            vistas[firma] = len(nuevas)     # posición 1-based
             pos_por_src[u] = len(nuevas)
-    # Si quedó al menos una foto buena, reemplazamos; si todas eran malas,
-    # dejamos las originales para no publicar sin ninguna imagen.
-    if nuevas:
-        product["images"] = nuevas
+        except Exception:
+            # No se pudo bajar/procesar: se descarta (no se publica sin encuadrar)
+            fotos_descartadas += 1
+    # Siempre publicamos SOLO las fotos ya encuadradas a 1740x1170 (nunca las
+    # originales sin procesar). Si ninguna quedó, va sin imágenes con aviso.
+    product["images"] = nuevas
     foto_warning = None
     if fotos_descartadas:
         foto_warning = (f"Se descartaron {fotos_descartadas} foto(s) repetidas o "
