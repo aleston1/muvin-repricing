@@ -1054,6 +1054,58 @@ def _imagenes_web(query, limit=20):
     return [], locals().get("ultimo")
 
 
+# Patrones de URL que casi nunca son la foto del producto: logos, íconos de
+# redes/pagos, avatares, wishlist, banners, blog, etc. Se descartan de una.
+_JUNK_IMG = re.compile(
+    r'(logo|icon|sprite|thumb|placeholder|banner|flag|whats?app|facebook|'
+    r'instagram|twitter|tiktok|youtube|pinterest|linkedin|telegram|avatar|'
+    r'gravatar|user[-_]?pic|profile|wishlist|heart|like|favorit|badge|seal|'
+    r'review|rating|estrella|star|cuotas?|mercadopago|banco|payment|pago|'
+    r'visa|master|amex|tarjet|envio|shipping|garantia|footer|header|nav[-_/]|'
+    r'menu|blog|author|comment|social|share|widget|pixel|tracking|spinner|'
+    r'loading|lazy|blank|1x1|spacer|default|no[-_]?image|sin[-_]?imagen)', re.I)
+
+
+def _aspecto_ok(w, h):
+    """La foto de un producto es más o menos cuadrada: descarta banners
+    (muy anchos) y tiras verticales (muy altas)."""
+    if not w or not h:
+        return False
+    r = w / h
+    return 0.5 <= r <= 2.0
+
+
+def foto_candidata_ok(contenido):
+    """Una candidata sirve si tiene buena resolución y proporción sana.
+    Es un poco más permisiva que el umbral de publicación, pero descarta
+    íconos, logos y banners por tamaño/forma."""
+    dim = dim_imagen(contenido)
+    if not dim:
+        return False
+    w, h = dim
+    return min(w, h) >= 450 and _aspecto_ok(w, h)
+
+
+def _verificar_fotos(urls, limite=8, max_bajar=16):
+    """Descarga las candidatas y deja solo las que son fotos de producto de
+    verdad (tamaño y proporción razonables). Devuelve [{url, size}]."""
+    buenas, bajadas = [], 0
+    for u in urls:
+        if len(buenas) >= limite or bajadas >= max_bajar:
+            break
+        if _JUNK_IMG.search(u):
+            continue
+        bajadas += 1
+        try:
+            contenido, _, _ = descargar_imagen(u)
+            if foto_candidata_ok(contenido):
+                w, h = dim_imagen(contenido)
+                buenas.append({"url": u, "size": f"{w}x{h}"})
+        except Exception:
+            continue
+    return buenas
+
+
 def _imagenes_fabricante(url):
     """Imágenes de la página del fabricante (og:image + galería)."""
     try:
@@ -1070,9 +1122,7 @@ def _imagenes_fabricante(url):
         # Imágenes de la galería del producto (jpg/png/webp grandes)
         for m in re.finditer(r'(?:src|data-src|data-zoom-image|data-large_image)=["\']'
                              r'(https?://[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)', html, re.I):
-            u = m.group(1)
-            if not re.search(r'(logo|icon|sprite|thumb|placeholder|banner|flag)', u, re.I):
-                urls.append(u)
+            urls.append(m.group(1))
         base = re.match(r'(https?://[^/]+)', url)
         norm, vistos = [], set()
         for u in urls:
@@ -1080,10 +1130,10 @@ def _imagenes_fabricante(url):
                 u = "https:" + u
             elif u.startswith("/") and base:
                 u = base.group(1) + u
-            if u.startswith("http") and u not in vistos:
+            if u.startswith("http") and u not in vistos and not _JUNK_IMG.search(u):
                 vistos.add(u)
                 norm.append(u)
-        return norm[:8]
+        return norm[:12]
     except Exception:
         pass
     return []
@@ -1172,25 +1222,25 @@ def fotos_ia():
         m = re.search(r"\[.*\]", texto, re.S)
         paginas = json.loads(m.group(0)) if m else []
 
-        vistos, fotos = set(), []
+        # Reunir URLs candidatas (imágenes directas + imágenes de las páginas)
+        vistos, candidatas = set(), []
         for pagina in paginas[:4]:
             if not isinstance(pagina, str) or not pagina.startswith("http"):
                 continue
-            # Si la IA devolvió directamente una imagen, usarla
             if re.search(r"\.(jpg|jpeg|png|webp)(\?|$)", pagina, re.I):
                 if pagina not in vistos:
-                    vistos.add(pagina)
-                    fotos.append({"url": pagina, "size": "", "chica": False,
-                                  "fuente": "Encontrada por IA", "tipo": "ia"})
+                    vistos.add(pagina); candidatas.append(pagina)
                 continue
-            # Si es una página, extraer sus imágenes de producto
             for img in _imagenes_fabricante(pagina):
                 if img not in vistos:
-                    vistos.add(img)
-                    fotos.append({"url": img, "size": "", "chica": False,
-                                  "fuente": "Encontrada por IA — " + pagina[:60],
-                                  "tipo": "ia"})
-        return jsonify({"fotos": fotos[:20]})
+                    vistos.add(img); candidatas.append(img)
+        # Verificar de verdad: descargar y quedarse solo con las que son fotos
+        # de producto (buena resolución y proporción). Así no aparecen logos,
+        # íconos de redes, corazones ni banners.
+        fotos = [{"url": f["url"], "size": f["size"], "chica": False,
+                  "fuente": "Encontrada por IA", "tipo": "ia"}
+                 for f in _verificar_fotos(candidatas, limite=8, max_bajar=16)]
+        return jsonify({"fotos": fotos})
     except Exception as e:
         return jsonify({"fotos": [], "error": str(e)})
 
