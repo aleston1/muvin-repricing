@@ -1177,7 +1177,8 @@ async function reencuadrarTN(){
     if (d.arregladas) partes.push(d.arregladas + ' arreglada(s)');
     if (d.ya_ok) partes.push(d.ya_ok + ' ya estaban bien');
     if (d.fallidas) partes.push(d.fallidas + ' fallaron');
-    hint.textContent = '✓ ' + (partes.join(' · ') || 'Sin cambios') + '. Refrescá la tienda para verlo.';
+    hint.textContent = '✓ ' + (partes.join(' · ') || 'Sin cambios') + '. Refrescá la tienda.'
+      + (d.detalle ? ' — ' + d.detalle : '');
   } catch(e){
     hint.textContent = '❌ ' + e.message;
   } finally {
