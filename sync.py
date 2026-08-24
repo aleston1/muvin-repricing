@@ -897,6 +897,15 @@ def _variantes_query(q):
     for n in (4, 3, 2):
         if len(palabras) >= n:
             agregar(" ".join(palabras[:n]))
+    # Variante "palabras clave": saca conectores, números y códigos de modelo
+    # (ej. 'Casco de moto Abierto LS2 562 Airflow 2 solid' -> 'casco moto abierto').
+    _stop = {"de", "la", "el", "los", "las", "para", "con", "sin", "y", "o", "a",
+             "un", "una", "del", "al", "por"}
+    claves = [w for w in re.sub(r"\([^)]*\)", "", q).lower().split()
+              if w not in _stop and not re.search(r"\d", w) and len(w) > 2]
+    for n in (3, 2, 1):
+        if len(claves) >= n:
+            agregar(" ".join(claves[:n]))
     return variantes
 
 
