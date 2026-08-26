@@ -147,6 +147,10 @@
     </label>
     <input type="text" id="f-debug" placeholder="Diagnóstico ML: nº de publicación (ej: 1695044184)" style="max-width:300px">
     <button class="btn btn-sm" onclick="debugItem()" title="Ver los datos crudos de una publicación de ML">🔍</button>
+    <span style="flex-basis:100%;height:0"></span>
+    <button class="btn btn-sm btn-green" id="btn-desc-lote" onclick="generarDescripcionesLote()" title="Genera las descripciones de los productos tildados y las deja listas">✨ Pre-generar descripciones de los tildados</button>
+    <button class="btn btn-sm" onclick="cancelarLote()" id="btn-desc-cancelar" style="display:none">Cancelar</button>
+    <span class="hint" id="desc-lote-estado"></span>
   </div>
 
   <div id="diag"></div>
@@ -154,11 +158,12 @@
   <div class="table-wrap">
     <table>
       <thead><tr>
+        <th style="text-align:center" title="Tildar para pre-generar descripción"><input type="checkbox" id="sel-todos" onchange="tildarTodos(this.checked)"></th>
         <th>SKU raíz</th><th>Producto</th><th style="text-align:right">Stock</th>
         <th style="text-align:center">Var.</th><th>Mercado Libre</th><th>Tiendanube</th><th></th>
       </tr></thead>
       <tbody id="tbody">
-        <tr class="empty-row"><td colspan="7">Configurá las credenciales y tocá “Analizar catálogo”.</td></tr>
+        <tr class="empty-row"><td colspan="8">Configurá las credenciales y tocá “Analizar catálogo”.</td></tr>
       </tbody>
     </table>
   </div>
@@ -677,7 +682,7 @@ function render(){
 
   const tbody = document.getElementById('tbody');
   if (!rows.length){
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Sin resultados con estos filtros.</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="8">Sin resultados con estos filtros.</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(r => {
@@ -690,8 +695,10 @@ function render(){
         ? r.tn.map(p=>`<a class="link-tn" href="${p.url||'#'}" target="_blank" rel="noopener">✓ ${p.hansa?'vínculo Hansa':(p.published?'visible':'oculto')}</a>`).join('<br>')
         : '<span class="badge badge-red">falta</span>');
     const falta = !r.ml.length || (tnDisponible && !r.tn.length);
+    const tieneDesc = !!descCacheGet(r.sku_raiz);
     return `<tr>
-      <td style="font-family:monospace">${r.sku_raiz}</td>
+      <td style="text-align:center"><input type="checkbox" class="sel-desc" data-sku="${r.sku_raiz}"></td>
+      <td style="font-family:monospace">${r.sku_raiz}${tieneDesc?' <span title="Descripción pre-generada">📝</span>':''}</td>
       <td>${escapeHtml(r.nombre || '(sin descripción en ERP)')}</td>
       <td style="text-align:right">${fmtStock(r.stock_total)}</td>
       <td style="text-align:center">${r.tiene_variantes ? r.variantes.length : '–'}</td>
@@ -764,8 +771,11 @@ async function abrirWizard(raiz){
   const slug = EQUIV && EQUIV.slugs && EQUIV.slugs[raiz];
   if (slug && slug.url){ fab.href = slug.url; fab.style.display = ''; fab.title = slug.notas || ''; }
   else fab.style.display = 'none';
-  document.getElementById('w-desc').value = '';
-  document.getElementById('w-desc-hint').textContent = '';
+  // Si ya pre-generamos la descripción de este producto, la cargamos lista
+  const descPre = descCacheGet(raiz);
+  document.getElementById('w-desc').value = descPre || '';
+  document.getElementById('w-desc-hint').textContent = descPre
+    ? 'Descripción pre-generada (cacheada). Podés editarla o regenerarla.' : '';
   document.getElementById('w-datos').value = '';
   document.getElementById('w-foto-url').value = '';
   document.getElementById('w-result').className = 'result-box';
@@ -1092,6 +1102,26 @@ function mensajeSaldo(){
   return '⚠ Se agotó el saldo de la API de Anthropic. Cargá créditos en console.anthropic.com → Plans & Billing y volvé a intentar. (La descripción y las fotos con IA no funcionan sin saldo.)';
 }
 
+// Descripciones cacheadas en el navegador (para no regenerar y ahorrar costo)
+function descCacheGet(sku){ try { return localStorage.getItem('muvin_desc_'+sku) || ''; } catch(e){ return ''; } }
+function descCacheSet(sku, texto){ try { if (texto) localStorage.setItem('muvin_desc_'+sku, texto); } catch(e){} }
+
+// Genera la descripción de un SKU (server-side). Devuelve {texto, ia} o lanza.
+async function generarDescPara(sku){
+  const r = ROWS.find(x => x.sku_raiz === sku);
+  if (!r) throw new Error('Producto no encontrado');
+  const slugUrl = (EQUIV && EQUIV.slugs && EQUIV.slugs[sku] && EQUIV.slugs[sku].url) || '';
+  const d = await api('/api/sync/describe', {method:'POST', headers:{'Content-Type':'application/json'},
+    timeout: 160000,
+    body: JSON.stringify({
+      nombre: r.nombre, titulo: r.nombre, sku_raiz: sku,
+      codigo: r.alt || '', alt: r.alt || '',
+      marca: marcaDe(r), slug_url: slugUrl, datos: '', api_key: cfg('cfg-ai-key'),
+    })});
+  if (d.texto && d.generado_con_ia) descCacheSet(sku, d.texto);
+  return d;
+}
+
 async function generarDescripcion(){
   const btn = document.getElementById('btn-describir');
   btn.disabled = true; btn.textContent = 'Investigando el producto…';
@@ -1112,6 +1142,7 @@ async function generarDescripcion(){
         api_key: cfg('cfg-ai-key'),
       })});
     document.getElementById('w-desc').value = d.texto;
+    if (d.texto && d.generado_con_ia) descCacheSet(W.sku_raiz, d.texto);
     document.getElementById('w-desc-hint').textContent = d.generado_con_ia
       ? 'Generada con IA a partir de fuentes web — revisá que las specs sean correctas antes de publicar.'
       : (esErrorDeSaldo(d.warning) ? mensajeSaldo() : (d.warning || 'Plantilla básica.'));
@@ -1120,6 +1151,45 @@ async function generarDescripcion(){
   } finally {
     btn.disabled = false; btn.textContent = '✨ Generar estilo Muvin';
   }
+}
+
+// ---- Pre-generación en lote de descripciones ----
+let LOTE_CANCELAR = false;
+function tildarTodos(check){
+  document.querySelectorAll('.sel-desc').forEach(c => { c.checked = check; });
+}
+function cancelarLote(){ LOTE_CANCELAR = true; }
+async function generarDescripcionesLote(){
+  if (!cfg('cfg-ai-key')){ alert('Falta la API key de Anthropic en Configuración.'); return; }
+  const skus = Array.from(document.querySelectorAll('.sel-desc'))
+    .filter(c => c.checked).map(c => c.dataset.sku)
+    .filter(sku => !descCacheGet(sku));  // saltear las que ya tienen descripción
+  const yaTenian = Array.from(document.querySelectorAll('.sel-desc')).filter(c=>c.checked).length - skus.length;
+  if (!skus.length){
+    document.getElementById('desc-lote-estado').textContent = yaTenian
+      ? 'Los tildados ya tienen descripción pre-generada.' : 'Tildá al menos un producto.';
+    return;
+  }
+  if (!confirm(`Se van a generar ${skus.length} descripción(es) con IA (cada una tarda ~30 seg y tiene costo). ¿Seguir?`)) return;
+  if (!EQUIV) await cargarEquivalencias();
+  LOTE_CANCELAR = false;
+  const btn = document.getElementById('btn-desc-lote');
+  const est = document.getElementById('desc-lote-estado');
+  btn.disabled = true;
+  document.getElementById('btn-desc-cancelar').style.display = '';
+  let ok = 0, fail = 0;
+  for (let i = 0; i < skus.length; i++){
+    if (LOTE_CANCELAR){ est.textContent = `Cancelado. ${ok} listas, faltaban ${skus.length-i}.`; break; }
+    est.textContent = `Generando ${i+1}/${skus.length} (${skus[i]})… ${ok} listas`;
+    try {
+      const d = await generarDescPara(skus[i]);
+      if (d.texto && d.generado_con_ia) ok++; else fail++;
+    } catch(e){ fail++; }
+  }
+  if (!LOTE_CANCELAR) est.textContent = `✓ ${ok} descripción(es) pre-generada(s)` + (fail?`, ${fail} fallaron`:'') + '. Quedan listas al abrir cada producto.';
+  document.getElementById('btn-desc-cancelar').style.display = 'none';
+  btn.disabled = false;
+  render();  // refresca el 📝 en las filas
 }
 
 // Fotos
