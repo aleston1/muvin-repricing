@@ -103,7 +103,9 @@ Reglas de precio sobre `ListaPrecios`: markup por marca/categoría, redondeo,
 precio por canal (ML/TN), y conexión con el repricing existente. Recalcular
 listas desde el costo.
 
-### Fase 3 — Facturación electrónica AFIP/ARCA
+### Fase 3 — Facturación electrónica AFIP/ARCA 🚧 (en progreso)
+Lógica fiscal + cliente WSAA/WSFEv1 implementados y testeados; falta el
+certificado digital para probar en homologación. Ver `docs/AFIP_FACTURACION.md`.
 El módulo más regulado. Punto crítico del proyecto.
 - `WSAA` (autenticación con **certificado digital**) + `WSFEv1` (comprobantes).
 - Entorno de **homologación** primero, luego **producción**.

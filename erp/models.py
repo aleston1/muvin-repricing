@@ -264,3 +264,66 @@ class PrecioLista(db.Model, TimestampMixin):
     def to_dict(self):
         return {"id": self.id, "lista_id": self.lista_id,
                 "variante_id": self.variante_id, "precio": self.precio}
+
+
+# --------------------------------------------------------------- Facturación (AFIP)
+
+class PuntoVenta(db.Model, TimestampMixin):
+    """Punto de venta habilitado en AFIP. La numeración de comprobantes es
+    por (punto de venta, tipo de comprobante)."""
+    __tablename__ = "puntos_venta"
+
+    id = Column(Integer, primary_key=True)
+    numero = Column(Integer, unique=True, nullable=False)  # p. ej. 1, 2, 3
+    descripcion = Column(String(120))
+    activo = Column(Boolean, default=True, nullable=False)
+
+    def to_dict(self):
+        return {"id": self.id, "numero": self.numero,
+                "descripcion": self.descripcion, "activo": self.activo}
+
+
+class Comprobante(db.Model, TimestampMixin):
+    """Comprobante electrónico emitido (o pendiente). Una vez con CAE es
+    inmutable: no se edita ni se borra, se anula con nota de crédito."""
+    __tablename__ = "comprobantes"
+    __table_args__ = (UniqueConstraint("punto_venta", "cbte_tipo", "numero",
+                                       name="uq_comprobante_pv_tipo_nro"),)
+
+    id = Column(Integer, primary_key=True)
+    fecha = Column(DateTime, default=_ahora, nullable=False, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), index=True)
+    punto_venta = Column(Integer, nullable=False)
+    cbte_tipo = Column(Integer, nullable=False)  # CbteTipo AFIP (1,6,11,...)
+    numero = Column(Integer)                      # asignado al obtener el CAE
+    concepto = Column(Integer, default=1)         # 1=Productos 2=Servicios 3=Ambos
+    neto = Column(Float, default=0)
+    iva = Column(Float, default=0)
+    total = Column(Float, default=0)
+    # borrador | autorizado | rechazado | anulado
+    estado = Column(String(20), default="borrador", nullable=False, index=True)
+    cae = Column(String(20))
+    cae_vencimiento = Column(String(10))
+    # JSON serializado de los ítems (snapshot inmutable de lo facturado).
+    items_json = Column(Text)
+    observaciones = Column(Text)
+
+    cliente = relationship("Cliente")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "fecha": self.fecha.isoformat() if self.fecha else None,
+            "cliente_id": self.cliente_id,
+            "punto_venta": self.punto_venta,
+            "cbte_tipo": self.cbte_tipo,
+            "numero": self.numero,
+            "concepto": self.concepto,
+            "neto": self.neto,
+            "iva": self.iva,
+            "total": self.total,
+            "estado": self.estado,
+            "cae": self.cae,
+            "cae_vencimiento": self.cae_vencimiento,
+            "observaciones": self.observaciones,
+        }
