@@ -2,6 +2,7 @@
 from flask import jsonify, request
 
 from ..models import Pedido
+from ..seguridad import ConexionesDeshabilitadas, requerir_conexiones
 from ..ventas import importar_ventas_ml, importar_ventas_tn
 from . import erp_bp
 
@@ -27,6 +28,10 @@ def sincronizar_ventas():
     """Trae ventas de los canales indicados y descuenta stock.
     Body: { canales: ["tiendanube","mercadolibre"] } (default: ambos)."""
     data = request.get_json(silent=True) or {}
+    try:
+        requerir_conexiones("canales de venta")
+    except ConexionesDeshabilitadas as e:
+        return jsonify({"error": str(e), "modo_seguro": True}), 403
     canales = data.get("canales") or ["tiendanube", "mercadolibre"]
     resultado = {}
     for canal in canales:

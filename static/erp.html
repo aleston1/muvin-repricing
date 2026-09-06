@@ -50,7 +50,8 @@
 <body>
 <header>
   <h1>🗄️ ERP Muvin</h1>
-  <span class="fase">Fase 1 — Productos · Stock · Clientes · Precios</span>
+  <span class="fase">Productos · Stock · Clientes · Ventas · Facturación</span>
+  <span id="badgeSeguro" style="margin-left:auto;font-size:12px;padding:4px 10px;border-radius:999px"></span>
 </header>
 <nav>
   <button data-tab="productos" class="activo">Productos</button>
@@ -464,7 +465,23 @@ async function cargarComprobantes() {
     || `<tr><td colspan="6" class="muted">Todavía no hay comprobantes.</td></tr>`;
 }
 
+// ---- Modo seguro (candado de conexiones externas)
+async function initModoSeguro() {
+  try {
+    const e = await api("/modo-seguro");
+    const b = $("badgeSeguro");
+    if (e.conexiones_habilitadas) {
+      b.textContent = "🔌 Conectado a plataformas";
+      b.style.background = "#3a2a12"; b.style.color = "#e0a63a";
+    } else {
+      b.textContent = "🔒 Modo seguro — sin conexiones externas";
+      b.style.background = "#12321e"; b.style.color = "#2ecc71";
+    }
+  } catch(e){ /* silencioso */ }
+}
+
 // Init
+initModoSeguro();
 cargarProductos();
 </script>
 </body>

@@ -128,6 +128,8 @@ def _ta_vigente(cfg):
 def autenticar(cfg=None):
     """Obtiene (token, sign) del WSAA, usando cache si sigue vigente."""
     cfg = cfg or cargar_config()
+    from ..seguridad import requerir_conexiones
+    requerir_conexiones("AFIP")
     err = _falta_config(cfg)
     if err:
         raise AfipConfigError(err)
@@ -162,6 +164,8 @@ def _auth(cfg, token, sign):
 def dummy(cfg=None):
     """FEDummy: chequea que WSFEv1 esté operativo (no requiere autenticación)."""
     cfg = cfg or cargar_config()
+    from ..seguridad import requerir_conexiones
+    requerir_conexiones("AFIP")
     import zeep
     cliente = zeep.Client(cfg["wsfev1"])
     r = cliente.service.FEDummy()

@@ -49,11 +49,30 @@ Principios de diseño:
 - **Módulos desacoplados** para que Facturación y Compras se enganchen sin
   reescribir el núcleo.
 
+## Modo seguro (candado de conexiones externas)
+
+Mientras el sistema está en construcción y validación, el ERP **no se conecta a
+ninguna plataforma externa** (Tiendanube, MercadoLibre, AFIP) por defecto.
+Cualquier operación que intente hacerlo se rechaza con HTTP 403 sin tocar nada
+afuera. Esto está garantizado por código (`erp/seguridad.py`), no depende de
+recordar no apretar un botón.
+
+- Por defecto (sin configurar nada): **modo seguro** → cero conexiones externas.
+- Para habilitar conexiones (recién cuando esté todo validado):
+  `ERP_PERMITIR_CONEXIONES=1`.
+- Estado visible en `GET /api/erp/modo-seguro` y en el badge del encabezado de
+  la UI.
+
+El candado protege: importación de Tiendanube, sincronización de ventas
+(TN/ML) y emisión de facturas (AFIP). Todo lo demás (cargar productos, stock,
+clientes, previsualizar comprobantes) es local y siempre funciona.
+
 ## Configuración
 
-| Variable        | Descripción                                              |
-|-----------------|----------------------------------------------------------|
-| `DATABASE_URL`  | PostgreSQL en producción. Sin ella, usa SQLite (`erp.db`). |
+| Variable                  | Descripción                                          |
+|---------------------------|------------------------------------------------------|
+| `DATABASE_URL`            | PostgreSQL en producción. Sin ella, usa SQLite (`erp.db`). |
+| `ERP_PERMITIR_CONEXIONES` | `1` para habilitar conexiones externas. Default: modo seguro (off). |
 
 En Render: agregar un PostgreSQL administrado y setear `DATABASE_URL`. La app
 crea las tablas sola al arrancar (`db.create_all()`).

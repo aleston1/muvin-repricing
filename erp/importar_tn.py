@@ -58,6 +58,8 @@ def importar_catalogo(store_id=None, token=None, deposito_codigo="CENTRAL",
                       lista_nombre="Tiendanube", max_paginas=100):
     """Importa/actualiza el catálogo completo. Devuelve estadísticas."""
     from sync import tn_headers, tn_nombre  # import diferido (evita ciclos)
+    from .seguridad import requerir_conexiones
+    requerir_conexiones("Tiendanube")
 
     store_id = store_id or os.environ.get("TN_STORE_ID", "")
     token = token or os.environ.get("TN_TOKEN", "")

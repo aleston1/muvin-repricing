@@ -12,6 +12,7 @@ from ..afip import comprobantes as fisc
 from ..afip import wsfev1
 from ..db import db
 from ..models import Cliente, Comprobante, PuntoVenta
+from ..seguridad import ConexionesDeshabilitadas, requerir_conexiones
 from . import erp_bp
 
 # Condición IVA del emisor (Muvin). Configurable a futuro; default RI.
@@ -92,6 +93,10 @@ def factura_emitir():
     data = request.get_json(force=True) or {}
     if data.get("punto_venta") is None:
         return jsonify({"error": "Falta punto_venta"}), 400
+    try:
+        requerir_conexiones("AFIP")
+    except ConexionesDeshabilitadas as e:
+        return jsonify({"error": str(e), "modo_seguro": True}), 403
     try:
         cliente, clase, cbte_tipo, totales, iva_arr, items = _armar_totales(data)
     except (KeyError, ValueError) as e:

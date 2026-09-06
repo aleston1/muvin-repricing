@@ -16,6 +16,8 @@ ML_BASE = "https://api.mercadolibre.com"
 def importar_ventas_tn(store_id=None, token=None, max_paginas=20,
                        deposito_codigo="CENTRAL"):
     from sync import tn_headers  # helpers de auth ya existentes
+    from .seguridad import requerir_conexiones
+    requerir_conexiones("Tiendanube")
 
     store_id = store_id or os.environ.get("TN_STORE_ID", "")
     token = token or os.environ.get("TN_TOKEN", "")
@@ -63,6 +65,9 @@ def _ml_sku(item):
 
 def importar_ventas_ml(user_id=None, token=None, limite=50,
                        deposito_codigo="CENTRAL"):
+    from .seguridad import requerir_conexiones
+    requerir_conexiones("MercadoLibre")
+
     user_id = user_id or os.environ.get("ML_USER_ID", "")
     token = token or os.environ.get("ML_TOKEN", "")
     if not user_id or not token:
