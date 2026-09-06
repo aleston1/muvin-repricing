@@ -128,12 +128,16 @@ Flujos objetivo:
 Productos, variantes, depósitos, stock por movimientos, clientes con datos
 fiscales, listas de precios, UI e importadores.
 
-### Fase 2 — Conexión con canales (en curso)
-- **Importar catálogo de Tiendanube** ✅ (`erp/importar_tn.py`): productos,
-  variantes, stock y precios, idempotente. Botón en la UI.
-- Importar catálogo de **MercadoLibre** (reutilizar el token/So del repricing).
-- **Precios**: reglas sobre `ListaPrecios` (markup por marca/canal, redondeo) y
-  publicación de precios a cada canal.
+### Fase 2 — Población de datos maestros
+La fuente de verdad es **Hansa**, no los canales. Por eso los datos maestros se
+migran desde Hansa:
+- **Migrador desde Hansa** ✅ (`erp/importar_hansa.py`): clientes, productos,
+  variantes y stock desde export de texto, con mapeo de columnas configurable.
+  Idempotente. Ver `docs/MIGRACION_HANSA.md`.
+- **Importar de Tiendanube** ✅ (`erp/importar_tn.py`): sólo un **atajo opcional
+  de arranque** para poder ver el sistema con datos reales antes de tener el
+  export de Hansa. NO es la fuente de verdad.
+- **Precios**: reglas sobre `ListaPrecios` (markup por marca/canal, redondeo).
 
 ### Fase 3 — Sincronización de ventas y stock (bidireccional)
 - Traer **pedidos/ventas** de TN y ML al ERP (modelo `Pedido`).
