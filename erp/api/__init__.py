@@ -4,4 +4,5 @@ from flask import Blueprint
 erp_bp = Blueprint("erp", __name__, url_prefix="/api/erp")
 
 # Importar los módulos registra sus rutas sobre erp_bp.
-from . import productos, stock, clientes, precios, facturacion, importacion  # noqa: E402,F401
+from . import (productos, stock, clientes, precios, facturacion,  # noqa: E402,F401
+               importacion, pedidos)

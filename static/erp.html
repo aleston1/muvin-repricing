@@ -56,6 +56,7 @@
   <button data-tab="productos" class="activo">Productos</button>
   <button data-tab="stock">Stock</button>
   <button data-tab="clientes">Clientes</button>
+  <button data-tab="ventas">Ventas</button>
   <button data-tab="facturacion">Facturación</button>
 </nav>
 <main>
@@ -177,6 +178,22 @@
     </div>
   </section>
 
+  <!-- ============================ VENTAS ============================ -->
+  <section id="tab-ventas" class="tab">
+    <div class="card">
+      <div class="row">
+        <strong style="flex:1">Pedidos de los canales</strong>
+        <button class="btn" onclick="sincronizarVentas()">⟳ Sincronizar ventas (TN + ML)</button>
+      </div>
+      <div id="ventasMsg" class="msg"></div>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>Fecha</th><th>Canal</th><th>N°</th><th>Cliente</th>
+        <th>Total</th><th>Estado</th><th>Entrega</th></tr></thead>
+        <tbody id="pedBody"></tbody></table>
+    </div>
+  </section>
+
   <!-- ============================ FACTURACIÓN ============================ -->
   <section id="tab-facturacion" class="tab">
     <div class="card">
@@ -235,6 +252,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   $("tab-"+b.dataset.tab).classList.add("activo");
   if (b.dataset.tab==="stock") cargarDepositos();
   if (b.dataset.tab==="clientes") cargarClientes();
+  if (b.dataset.tab==="ventas") cargarPedidos();
   if (b.dataset.tab==="facturacion") initFacturacion();
 });
 
@@ -337,6 +355,36 @@ async function crearCliente() {
     ["cRazon","cDoc","cEmail","cTel","cDir","cLoc","cProv"].forEach(i=>$(i).value="");
     cargarClientes();
   } catch(e){ msg($("cliMsg"), e.message, false); }
+}
+
+// ---- Ventas
+const CANAL_NOMBRE = {tiendanube:"Tiendanube", mercadolibre:"MercadoLibre", manual:"Manual"};
+async function cargarPedidos() {
+  const d = await api("/pedidos?limit=100");
+  $("pedBody").innerHTML = d.pedidos.map(p=>`<tr>
+    <td>${(p.fecha||"").slice(0,10)}</td>
+    <td><span class="pill">${CANAL_NOMBRE[p.canal]||p.canal}</span></td>
+    <td>${esc(p.canal_pedido_id)}</td><td>${esc(p.cliente_nombre)||"—"}</td>
+    <td>$${p.total}</td><td><span class="pill">${esc(p.estado)}</span></td>
+    <td>${p.entregado?"✓ entregado"
+      :`<button class="btn sec" onclick="entregar(${p.id})">Marcar entregado</button>`}</td></tr>`).join("")
+    || `<tr><td colspan="7" class="muted">Todavía no hay pedidos. Sincronizá los canales.</td></tr>`;
+}
+async function sincronizarVentas() {
+  msg($("ventasMsg"), "Sincronizando ventas de Tiendanube y MercadoLibre…", true);
+  try {
+    const d = await api("/pedidos/sincronizar", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({})});
+    const partes = Object.entries(d.resultado).map(([canal,r])=>
+      r.error ? `${CANAL_NOMBRE[canal]||canal}: ${r.error}`
+        : `${CANAL_NOMBRE[canal]||canal}: ${r.pedidos_nuevos} nuevos`);
+    msg($("ventasMsg"), "✓ " + partes.join(" · "), true);
+    cargarPedidos();
+  } catch(e){ msg($("ventasMsg"), e.message, false); }
+}
+async function entregar(id) {
+  try { await api(`/pedidos/${id}/entregar`, {method:"POST"}); cargarPedidos(); }
+  catch(e){ msg($("ventasMsg"), e.message, false); }
 }
 
 // ---- Facturación

@@ -327,3 +327,70 @@ class Comprobante(db.Model, TimestampMixin):
             "cae_vencimiento": self.cae_vencimiento,
             "observaciones": self.observaciones,
         }
+
+
+# --------------------------------------------------------------- Ventas / Pedidos
+
+class Pedido(db.Model, TimestampMixin):
+    """Venta que entra desde un canal (Tiendanube / MercadoLibre) al ERP.
+
+    Al registrarse descuenta stock una única vez (`stock_descontado`) y puede
+    facturarse (enlazado a un Comprobante) y entregarse. Es idempotente por
+    (canal, canal_pedido_id): re-sincronizar no duplica."""
+    __tablename__ = "pedidos"
+    __table_args__ = (UniqueConstraint("canal", "canal_pedido_id",
+                                       name="uq_pedido_canal_id"),)
+
+    id = Column(Integer, primary_key=True)
+    canal = Column(String(20), nullable=False, index=True)  # tiendanube | mercadolibre | manual
+    canal_pedido_id = Column(String(60), nullable=False, index=True)  # id/nro en el canal
+    fecha = Column(DateTime, default=_ahora, nullable=False, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), index=True)
+    cliente_nombre = Column(String(255))  # nombre tal cual vino del canal
+    total = Column(Float, default=0)
+    # pendiente | stock_descontado | facturado | entregado | cancelado
+    estado = Column(String(30), default="pendiente", nullable=False, index=True)
+    stock_descontado = Column(Boolean, default=False, nullable=False)
+    comprobante_id = Column(Integer, ForeignKey("comprobantes.id"))
+    entregado = Column(Boolean, default=False, nullable=False)
+    observaciones = Column(Text)
+
+    cliente = relationship("Cliente")
+    comprobante = relationship("Comprobante")
+    items = relationship("PedidoItem", back_populates="pedido",
+                         cascade="all, delete-orphan", lazy="selectin")
+
+    def to_dict(self, con_items=True):
+        d = {
+            "id": self.id,
+            "canal": self.canal,
+            "canal_pedido_id": self.canal_pedido_id,
+            "fecha": self.fecha.isoformat() if self.fecha else None,
+            "cliente_id": self.cliente_id,
+            "cliente_nombre": self.cliente_nombre,
+            "total": self.total,
+            "estado": self.estado,
+            "stock_descontado": self.stock_descontado,
+            "entregado": self.entregado,
+            "comprobante_id": self.comprobante_id,
+        }
+        if con_items:
+            d["items"] = [i.to_dict() for i in self.items]
+        return d
+
+
+class PedidoItem(db.Model):
+    __tablename__ = "pedido_items"
+
+    id = Column(Integer, primary_key=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id"), nullable=False, index=True)
+    sku = Column(String(64), index=True)
+    descripcion = Column(String(255))
+    cantidad = Column(Float, nullable=False, default=1)
+    precio_unitario = Column(Float, default=0)
+
+    pedido = relationship("Pedido", back_populates="items")
+
+    def to_dict(self):
+        return {"sku": self.sku, "descripcion": self.descripcion,
+                "cantidad": self.cantidad, "precio_unitario": self.precio_unitario}

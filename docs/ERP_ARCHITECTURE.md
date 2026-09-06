@@ -139,15 +139,15 @@ migran desde Hansa:
   export de Hansa. NO es la fuente de verdad.
 - **Precios**: reglas sobre `ListaPrecios` (markup por marca/canal, redondeo).
 
-### Fase 3 — Sincronización de ventas y stock (bidireccional)
-- Traer **pedidos/ventas** de TN y ML al ERP (modelo `Pedido`).
-- Descontar stock automáticamente al vender; **publicar el stock** actualizado a
-  ambos canales (webhooks de TN/ML o polling).
-- Detectar altas/bajas de stock y propagarlas.
+### Fase 3 — Sincronización de ventas y stock (bidireccional) 🚧 (en curso)
+- **Traer ventas** de TN y ML al ERP ✅ (`erp/ventas.py`, modelo `Pedido`):
+  descuenta stock automáticamente, idempotente por (canal, id). Botón en la UI.
+- Pendiente: **publicar el stock** actualizado del ERP hacia ambos canales
+  (webhooks de TN/ML o polling), para el sentido inverso.
 
-### Fase 4 — Entregas
-Estado de preparación y despacho de cada pedido; remito; integración con
-logística si aplica.
+### Fase 4 — Entregas 🚧 (base lista)
+Estado de cada pedido y marca de **entregado** ✅. Pendiente: remito y
+integración con logística si aplica.
 
 ### Fase 5 — Facturación electrónica AFIP/ARCA 🚧 (implementada, en pausa)
 Lógica fiscal + cliente WSAA/WSFEv1 **implementados y testeados**; falta el
