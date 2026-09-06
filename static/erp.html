@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP Muvin</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
+    --text:#e7e9ee; --muted:#9aa3b2; --accent:#4f8cff; --accent2:#2ecc71;
+    --danger:#ff5c5c;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { padding:16px 24px; border-bottom:1px solid var(--border);
+           display:flex; align-items:center; gap:16px; background:var(--panel); }
+  header h1 { font-size:18px; margin:0; }
+  header .fase { font-size:12px; color:var(--muted); }
+  nav { display:flex; gap:4px; padding:12px 24px 0; }
+  nav button { background:transparent; border:none; color:var(--muted);
+    padding:10px 16px; cursor:pointer; border-radius:8px 8px 0 0; font-size:14px; }
+  nav button.activo { color:var(--text); background:var(--panel); font-weight:600; }
+  main { padding:24px; }
+  .tab { display:none; }
+  .tab.activo { display:block; }
+  .card { background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  input, select { background:var(--panel2); border:1px solid var(--border);
+    color:var(--text); padding:8px 10px; border-radius:8px; font-size:14px; }
+  input:focus, select:focus { outline:1px solid var(--accent); }
+  button.btn { background:var(--accent); border:none; color:#fff; padding:9px 16px;
+    border-radius:8px; cursor:pointer; font-size:14px; font-weight:600; }
+  button.btn.sec { background:var(--panel2); border:1px solid var(--border); }
+  table { width:100%; border-collapse:collapse; margin-top:12px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border);
+    font-size:13px; }
+  th { color:var(--muted); font-weight:600; }
+  tr:hover td { background:var(--panel2); }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px;
+    background:var(--panel2); border:1px solid var(--border); }
+  .muted { color:var(--muted); }
+  .msg { font-size:13px; margin-top:8px; min-height:18px; }
+  .msg.ok { color:var(--accent2); } .msg.err { color:var(--danger); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🗄️ ERP Muvin</h1>
+  <span class="fase">Fase 1 — Productos · Stock · Clientes · Precios</span>
+</header>
+<nav>
+  <button data-tab="productos" class="activo">Productos</button>
+  <button data-tab="stock">Stock</button>
+  <button data-tab="clientes">Clientes</button>
+</nav>
+<main>
+
+  <!-- ============================ PRODUCTOS ============================ -->
+  <section id="tab-productos" class="tab activo">
+    <div class="card">
+      <div class="row">
+        <div style="flex:1;min-width:200px">
+          <label>Buscar (nombre, SKU raíz, marca)</label>
+          <input id="prodQ" style="width:100%" placeholder="Escribí para filtrar…">
+        </div>
+        <button class="btn sec" onclick="cargarProductos()">Buscar</button>
+      </div>
+    </div>
+    <div class="card">
+      <strong>Nuevo producto</strong>
+      <div class="row" style="margin-top:10px">
+        <div><label>SKU raíz</label><input id="pSku" size="8" maxlength="6"></div>
+        <div style="flex:1"><label>Nombre</label><input id="pNombre" style="width:100%"></div>
+        <div><label>Marca</label><input id="pMarca"></div>
+        <div><label>Categoría</label><input id="pCat"></div>
+        <div><label>Costo</label><input id="pCosto" type="number" step="0.01" size="8"></div>
+        <button class="btn" onclick="crearProducto()">Agregar</button>
+      </div>
+      <div id="prodMsg" class="msg"></div>
+    </div>
+    <div class="card">
+      <div id="prodTotal" class="muted"></div>
+      <table><thead><tr>
+        <th>SKU raíz</th><th>Nombre</th><th>Marca</th><th>Categoría</th>
+        <th>Costo</th><th>Stock</th><th></th>
+      </tr></thead><tbody id="prodBody"></tbody></table>
+    </div>
+  </section>
+
+  <!-- ============================ STOCK ============================ -->
+  <section id="tab-stock" class="tab">
+    <div class="card">
+      <strong>Depósitos</strong>
+      <div class="row" style="margin-top:10px">
+        <div><label>Código</label><input id="dCod" size="10"></div>
+        <div><label>Nombre</label><input id="dNom"></div>
+        <button class="btn" onclick="crearDeposito()">Crear depósito</button>
+      </div>
+      <div id="depGrid" class="grid" style="margin-top:12px"></div>
+      <div id="depMsg" class="msg"></div>
+    </div>
+    <div class="card">
+      <strong>Registrar movimiento de stock</strong>
+      <div class="row" style="margin-top:10px">
+        <div><label>SKU (variante)</label><input id="mSku"></div>
+        <div><label>Depósito</label><select id="mDep"></select></div>
+        <div><label>Tipo</label>
+          <select id="mTipo">
+            <option value="ingreso">Ingreso</option>
+            <option value="egreso">Egreso</option>
+            <option value="ajuste">Ajuste (delta)</option>
+            <option value="inicial">Carga inicial</option>
+          </select></div>
+        <div><label>Cantidad</label><input id="mCant" type="number" step="1" size="8"></div>
+        <div style="flex:1"><label>Motivo / referencia</label><input id="mMotivo" style="width:100%"></div>
+        <button class="btn" onclick="registrarMov()">Registrar</button>
+      </div>
+      <div id="movMsg" class="msg"></div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <div><label>Ver stock por SKU</label><input id="sSku"></div>
+        <button class="btn sec" onclick="verStock()">Consultar</button>
+      </div>
+      <table><thead><tr><th>SKU</th><th>Depósito</th><th>Cantidad</th></tr></thead>
+        <tbody id="stockBody"></tbody></table>
+    </div>
+  </section>
+
+  <!-- ============================ CLIENTES ============================ -->
+  <section id="tab-clientes" class="tab">
+    <div class="card">
+      <div class="row">
+        <div style="flex:1;min-width:200px">
+          <label>Buscar (razón social, documento, email)</label>
+          <input id="cliQ" style="width:100%">
+        </div>
+        <button class="btn sec" onclick="cargarClientes()">Buscar</button>
+      </div>
+    </div>
+    <div class="card">
+      <strong>Nuevo cliente</strong>
+      <div class="row" style="margin-top:10px">
+        <div style="flex:1"><label>Razón social</label><input id="cRazon" style="width:100%"></div>
+        <div><label>Tipo doc</label>
+          <select id="cTipoDoc"><option>CUIT</option><option>CUIL</option>
+            <option>DNI</option><option>CDI</option><option>PASAPORTE</option></select></div>
+        <div><label>N° documento</label><input id="cDoc"></div>
+        <div><label>Condición IVA</label>
+          <select id="cIva"><option value="CF">Consumidor Final</option>
+            <option value="RI">Resp. Inscripto</option>
+            <option value="MONOTRIBUTO">Monotributo</option>
+            <option value="EXENTO">Exento</option></select></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label>Email</label><input id="cEmail"></div>
+        <div><label>Teléfono</label><input id="cTel"></div>
+        <div style="flex:1"><label>Dirección</label><input id="cDir" style="width:100%"></div>
+        <div><label>Localidad</label><input id="cLoc"></div>
+        <div><label>Provincia</label><input id="cProv"></div>
+        <button class="btn" onclick="crearCliente()">Agregar</button>
+      </div>
+      <div id="cliMsg" class="msg"></div>
+    </div>
+    <div class="card">
+      <div id="cliTotal" class="muted"></div>
+      <table><thead><tr>
+        <th>Razón social</th><th>Doc</th><th>Cond. IVA</th><th>Email</th><th>Localidad</th>
+      </tr></thead><tbody id="cliBody"></tbody></table>
+    </div>
+  </section>
+
+</main>
+<script>
+const API = "/api/erp";
+const $ = id => document.getElementById(id);
+const esc = s => (s==null?"":String(s)).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts);
+  const data = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+function msg(el, text, ok) { el.textContent = text; el.className = "msg " + (ok?"ok":"err"); }
+
+// ---- Tabs
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x=>x.classList.remove("activo"));
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("activo"));
+  b.classList.add("activo");
+  $("tab-"+b.dataset.tab).classList.add("activo");
+  if (b.dataset.tab==="stock") cargarDepositos();
+  if (b.dataset.tab==="clientes") cargarClientes();
+});
+
+// ---- Productos
+async function cargarProductos() {
+  const q = encodeURIComponent($("prodQ").value.trim());
+  const d = await api(`/productos?q=${q}&limit=100`);
+  $("prodTotal").textContent = `${d.total} producto(s)`;
+  $("prodBody").innerHTML = d.productos.map(p => `<tr>
+    <td><span class="pill">${esc(p.sku_raiz)}</span></td>
+    <td>${esc(p.nombre)}</td><td>${esc(p.marca)||"—"}</td>
+    <td>${esc(p.categoria)||"—"}</td>
+    <td>${p.costo!=null?("$"+p.costo):"—"}</td>
+    <td>${p.stock_total}</td>
+    <td>${p.activo?"":"<span class='muted'>inactivo</span>"}</td></tr>`).join("")
+    || `<tr><td colspan="7" class="muted">Sin resultados.</td></tr>`;
+}
+async function crearProducto() {
+  try {
+    await api("/productos", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ sku_raiz:$("pSku").value, nombre:$("pNombre").value,
+        marca:$("pMarca").value, categoria:$("pCat").value,
+        costo: parseFloat($("pCosto").value)||null })});
+    msg($("prodMsg"), "Producto creado.", true);
+    ["pSku","pNombre","pMarca","pCat","pCosto"].forEach(i=>$(i).value="");
+    cargarProductos();
+  } catch(e){ msg($("prodMsg"), e.message, false); }
+}
+
+// ---- Stock
+async function cargarDepositos() {
+  const d = await api("/depositos");
+  $("depGrid").innerHTML = d.depositos.map(x =>
+    `<div class="card" style="margin:0;padding:10px">
+      <strong>${esc(x.codigo)}</strong><br><span class="muted">${esc(x.nombre)}</span></div>`
+  ).join("") || `<span class="muted">Todavía no hay depósitos.</span>`;
+  $("mDep").innerHTML = d.depositos.map(x =>
+    `<option value="${x.id}">${esc(x.codigo)}</option>`).join("");
+}
+async function crearDeposito() {
+  try {
+    await api("/depositos", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ codigo:$("dCod").value, nombre:$("dNom").value })});
+    msg($("depMsg"), "Depósito creado.", true);
+    $("dCod").value=""; $("dNom").value=""; cargarDepositos();
+  } catch(e){ msg($("depMsg"), e.message, false); }
+}
+async function registrarMov() {
+  try {
+    const d = await api("/stock/movimientos", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ sku:$("mSku").value.trim(), deposito_id:parseInt($("mDep").value),
+        tipo:$("mTipo").value, cantidad:parseFloat($("mCant").value),
+        motivo:$("mMotivo").value })});
+    msg($("movMsg"), `Movimiento OK. Saldo actual: ${d.saldo}`, true);
+    $("mCant").value=""; $("mMotivo").value="";
+    if ($("sSku").value.trim()===$("mSku").value.trim()) verStock();
+  } catch(e){ msg($("movMsg"), e.message, false); }
+}
+async function verStock() {
+  const sku = encodeURIComponent($("sSku").value.trim());
+  const d = await api(`/stock?sku=${sku}`);
+  $("stockBody").innerHTML = d.stock.map(s=>`<tr>
+    <td>${esc(s.sku)}</td><td>${esc(s.deposito)}</td><td>${s.cantidad}</td></tr>`).join("")
+    || `<tr><td colspan="3" class="muted">Sin stock para ese SKU.</td></tr>`;
+}
+
+// ---- Clientes
+async function cargarClientes() {
+  const q = encodeURIComponent($("cliQ").value.trim());
+  const d = await api(`/clientes?q=${q}&limit=100`);
+  $("cliTotal").textContent = `${d.total} cliente(s)`;
+  $("cliBody").innerHTML = d.clientes.map(c=>`<tr>
+    <td>${esc(c.razon_social)}</td>
+    <td>${esc(c.tipo_doc)} ${esc(c.nro_doc)||""}</td>
+    <td><span class="pill">${esc(c.condicion_iva)}</span></td>
+    <td>${esc(c.email)||"—"}</td><td>${esc(c.localidad)||"—"}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="muted">Sin resultados.</td></tr>`;
+}
+async function crearCliente() {
+  try {
+    await api("/clientes", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ razon_social:$("cRazon").value, tipo_doc:$("cTipoDoc").value,
+        nro_doc:$("cDoc").value, condicion_iva:$("cIva").value, email:$("cEmail").value,
+        telefono:$("cTel").value, direccion:$("cDir").value, localidad:$("cLoc").value,
+        provincia:$("cProv").value })});
+    msg($("cliMsg"), "Cliente creado.", true);
+    ["cRazon","cDoc","cEmail","cTel","cDir","cLoc","cProv"].forEach(i=>$(i).value="");
+    cargarClientes();
+  } catch(e){ msg($("cliMsg"), e.message, false); }
+}
+
+// Init
+cargarProductos();
+</script>
+</body>
+</html>

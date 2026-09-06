@@ -11,6 +11,10 @@ CORS(app)
 from sync import sync_bp
 app.register_blueprint(sync_bp)
 
+# ERP Muvin (Fase 1: Productos, Stock, Clientes, Precios).
+from erp import init_erp
+init_erp(app)
+
 TOKEN   = os.environ.get("ML_TOKEN", "")
 USER_ID = os.environ.get("ML_USER_ID", "246901020")
 BASE    = "https://api.mercadolibre.com"
@@ -60,6 +64,10 @@ def index():
 @app.route("/sync")
 def sync_page():
     return _sin_cache(app.send_static_file("sync.html"))
+
+@app.route("/erp")
+def erp_page():
+    return _sin_cache(app.send_static_file("erp.html"))
 
 @app.route("/api/items")
 def get_items():
