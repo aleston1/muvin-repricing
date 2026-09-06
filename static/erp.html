@@ -69,7 +69,9 @@
           <input id="prodQ" style="width:100%" placeholder="Escribí para filtrar…">
         </div>
         <button class="btn sec" onclick="cargarProductos()">Buscar</button>
+        <button class="btn" onclick="importarTN()">⬇ Importar de Tiendanube</button>
       </div>
+      <div id="impMsg" class="msg"></div>
     </div>
     <div class="card">
       <strong>Nuevo producto</strong>
@@ -249,6 +251,18 @@ async function cargarProductos() {
     <td>${p.stock_total}</td>
     <td>${p.activo?"":"<span class='muted'>inactivo</span>"}</td></tr>`).join("")
     || `<tr><td colspan="7" class="muted">Sin resultados.</td></tr>`;
+}
+async function importarTN() {
+  msg($("impMsg"), "Importando catálogo de Tiendanube… (puede tardar)", true);
+  try {
+    const d = await api("/importar/tiendanube", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:"{}"});
+    const s = d.stats;
+    msg($("impMsg"), `✓ ${s.productos_creados} productos nuevos, `
+      + `${s.variantes_creadas} variantes, ${s.stock_ajustado} ajustes de stock, `
+      + `${s.precios_seteados} precios. (${s.omitidos_sin_sku} sin SKU omitidos)`, true);
+    cargarProductos();
+  } catch(e){ msg($("impMsg"), e.message, false); }
 }
 async function crearProducto() {
   try {

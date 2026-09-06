@@ -92,38 +92,85 @@ Base: `/api/erp`
 | POST   | `/listas-precios`                      | Crear lista                    |
 | POST   | `/listas-precios/<id>/precios`         | Fijar precio de variante (upsert) |
 
+## Visión: ERP omnicanal
+
+El ERP es el **centro** (fuente de verdad de stock, precios y clientes) y los
+canales (Tiendanube, MercadoLibre) son satélites que se sincronizan en ambos
+sentidos:
+
+```
+        ┌────────────┐        ┌──────────────┐
+        │ Tiendanube │        │ MercadoLibre │
+        └─────┬──────┘        └──────┬───────┘
+     ventas/stock/precio      ventas/stock/precio
+              └──────────┬───────────┘
+                    ┌────▼─────┐
+                    │   ERP    │  stock, precios, clientes, ventas,
+                    │ (verdad) │  facturación, entregas
+                    └────┬─────┘
+                         │ export
+                    ┌────▼─────┐
+                    │ Contable │
+                    └──────────┘
+```
+
+Flujos objetivo:
+- **Ventas**: cada venta en TN/ML entra al ERP como pedido → descuenta stock →
+  se factura (AFIP) → se prepara la entrega.
+- **Stock**: un alta/baja de stock en el ERP se replica a TN y ML; una venta en
+  un canal descuenta y actualiza el stock publicado en el otro.
+- **Precios**: las listas del ERP publican precio a cada canal (con su markup),
+  conectado al repricing existente.
+
 ## Hoja de ruta
 
-### Fase 1 — Núcleo operativo ✅ (este cambio)
+### Fase 1 — Núcleo operativo ✅
 Productos, variantes, depósitos, stock por movimientos, clientes con datos
 fiscales, listas de precios, UI e importadores.
 
-### Fase 2 — Precios
-Reglas de precio sobre `ListaPrecios`: markup por marca/categoría, redondeo,
-precio por canal (ML/TN), y conexión con el repricing existente. Recalcular
-listas desde el costo.
+### Fase 2 — Conexión con canales (en curso)
+- **Importar catálogo de Tiendanube** ✅ (`erp/importar_tn.py`): productos,
+  variantes, stock y precios, idempotente. Botón en la UI.
+- Importar catálogo de **MercadoLibre** (reutilizar el token/So del repricing).
+- **Precios**: reglas sobre `ListaPrecios` (markup por marca/canal, redondeo) y
+  publicación de precios a cada canal.
 
-### Fase 3 — Facturación electrónica AFIP/ARCA 🚧 (en progreso)
-Lógica fiscal + cliente WSAA/WSFEv1 implementados y testeados; falta el
+### Fase 3 — Sincronización de ventas y stock (bidireccional)
+- Traer **pedidos/ventas** de TN y ML al ERP (modelo `Pedido`).
+- Descontar stock automáticamente al vender; **publicar el stock** actualizado a
+  ambos canales (webhooks de TN/ML o polling).
+- Detectar altas/bajas de stock y propagarlas.
+
+### Fase 4 — Entregas
+Estado de preparación y despacho de cada pedido; remito; integración con
+logística si aplica.
+
+### Fase 5 — Facturación electrónica AFIP/ARCA 🚧 (implementada, en pausa)
+Lógica fiscal + cliente WSAA/WSFEv1 **implementados y testeados**; falta el
 certificado digital para probar en homologación. Ver `docs/AFIP_FACTURACION.md`.
-El módulo más regulado. Punto crítico del proyecto.
-- `WSAA` (autenticación con **certificado digital**) + `WSFEv1` (comprobantes).
-- Entorno de **homologación** primero, luego **producción**.
-- Librería recomendada: PyAfipWs o cliente SOAP con `zeep`. No escribir el SOAP
-  a mano.
-- Contemplar desde el diseño: numeración por **punto de venta**, tipo de
-  comprobante según condición IVA del cliente, **CAE/CAEA**, y guardado
-  inmutable del comprobante fiscal.
-- Modelo nuevo: `Comprobante` (tipo, punto de venta, número, cliente, ítems,
-  neto/IVA/total, CAE, vencimiento_CAE, estado).
+Se retoma al final, cuando el sistema operativo ya esté andando. Facturará las
+ventas que entren por los canales.
 
-### Fase 4 — Compras y cuenta corriente
+### Fase 6 — Compras y cuenta corriente
 Órdenes de compra que generan ingresos de stock; cuenta corriente de clientes
 y proveedores.
 
-### Fase 5 — Migración y salida de Hansa
-Migrar histórico y saldos desde Hansa, correr en paralelo, y recién entonces
-dar de baja Hansa.
+### Fase 7 — Migración y salida de Hansa
+Migrar histórico y saldos desde Hansa (ver "Datos desde Hansa"), correr en
+paralelo, y recién entonces dar de baja Hansa.
+
+## Datos desde Hansa
+
+Hansa es software propietario: sus archivos de base de datos están en un
+**formato binario cerrado** que no se puede leer ni copiar como código. Lo que
+sí se usa —y es muy valioso— es **exportar los datos** desde Hansa (Hansa
+exporta registros a texto tabulado / Excel) para:
+1. Replicar la estructura de campos que la operación realmente usa.
+2. Migrar los datos reales al ERP (clientes, productos, stock, precios,
+   histórico).
+
+Con una muestra de export de Hansa se construye un importador específico
+(similar a `erp/importar_tn.py`).
 
 ## Riesgos y responsabilidades (no técnicos)
 
