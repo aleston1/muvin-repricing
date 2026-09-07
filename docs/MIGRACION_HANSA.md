@@ -94,22 +94,26 @@ mapeo_stock = {"sku": "Item", "cantidad": "En Stock"}
 ```
 Migrado OK: 2.608 ítems con existencias (resto en 0). Ej.: A00001 → 39, A00023 → 1.
 
-### Contactos (`Contactos.TXT`, tabulado, ~90 columnas)
-Mapeo propuesto (a confirmar la columna de condición IVA con el archivo real):
+### Contactos (`Contactos.TXT`, tabulado, ~81 columnas) — mapeo confirmado
 ```python
 mapeo_clientes = {
     "codigo_externo": "Code",     # 0002, C00001 — clave de deduplicación
     "razon_social": "Name",
     "nombre_fantasia": "Person",
-    "nro_doc": "VATNr",           # CUIT (ojo: consumidores con 11111111 ficticio)
+    "nro_doc": "VATNr",           # CUIT (consumidores con 11111111 ficticio)
     "email": "eMail",
     "telefono": "Phone",
     "direccion": "InvAddr0",
     "localidad": "InvAddr1",
     "codigo_postal": "InvAddr2",
-    # "condicion_iva": "<columna con Resp. Insc. / Consum. Final>",
+    "condicion_iva": "CustType",  # "Resp. Insc." / "Consum. Final" / "Resp. Monotributo" / ...
 }
 ```
+La condición de IVA está en la columna **CustType**. El importador además
+**auto-detecta** esa columna por sus valores, por si en otro export cambia de
+lugar. Validado con muestra real: RI / MONOTRIBUTO / EXENTO / CF correctas y
+sin colisión de los CUIT ficticios (dedupe por `Code`).
+
 Pendiente: el archivo completo (20 MB) supera el límite de descarga de la
-herramienta de Drive (10 MB). Se necesita dividirlo en partes <10 MB o
-re-exportarlo con menos columnas para migrarlo y confirmar la columna de IVA.
+herramienta de Drive (10 MB). Para migrarlo entero: dividirlo en 2 partes
+<10 MB, o re-exportarlo con menos columnas.

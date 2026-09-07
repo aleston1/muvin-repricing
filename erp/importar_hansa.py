@@ -102,11 +102,40 @@ def _sku_raiz(sku):
 
 # --------------------------------------------------------------- Clientes
 
+def _detectar_col_iva(filas, iva_map, muestra=300):
+    """Devuelve el nombre de la columna que contiene la condición de IVA,
+    detectándola por los valores conocidos ("Resp. Insc.", "Consum. Final",
+    etc.). Robusto ante cambios de posición entre exports."""
+    from collections import Counter
+    cont = Counter()
+    for fila in filas[:muestra]:
+        if not isinstance(fila, dict):
+            return None
+        for col, val in fila.items():
+            if (str(val).strip().lower() if val else "") in iva_map:
+                cont[col] += 1
+    return cont.most_common(1)[0][0] if cont else None
+
+
 def importar_clientes(filas, mapeo, iva_map=None):
     """Migra clientes. Campos posibles del mapeo: razon_social,
     nombre_fantasia, tipo_doc, nro_doc, condicion_iva, email, telefono,
-    direccion, localidad, provincia, codigo_postal."""
+    direccion, localidad, provincia, codigo_postal.
+
+    Si no se mapea 'condicion_iva' (o su columna no tiene valores válidos), se
+    detecta automáticamente la columna que contiene la condición de IVA."""
     iva_map = {**IVA_DEFAULT, **(iva_map or {})}
+    mapeo = dict(mapeo)
+    # Auto-detección de la columna de condición de IVA.
+    col_cond = mapeo.get("condicion_iva")
+    valida = col_cond and any(
+        (str(_val(f, mapeo, "condicion_iva")).strip().lower() if _val(f, mapeo, "condicion_iva") else "") in iva_map
+        for f in filas[:300])
+    if not valida:
+        detectada = _detectar_col_iva(filas, iva_map)
+        if detectada:
+            mapeo["condicion_iva"] = detectada
+
     stats = {"creados": 0, "actualizados": 0, "omitidos": 0}
     for fila in filas:
         razon = _limpiar(_val(fila, mapeo, "razon_social"))
