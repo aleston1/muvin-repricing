@@ -44,6 +44,19 @@ def _detectar_sep(muestra):
     return "\t"
 
 
+def _decodificar(datos):
+    """Los export de Hansa suelen venir en Latin-1/Windows-1252 (Argentina),
+    no en UTF-8. Se prueba UTF-8 y se cae a cp1252 para conservar acentos y ñ."""
+    if isinstance(datos, str):
+        return datos
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return datos.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return datos.decode("latin-1", errors="replace")
+
+
 def leer_filas(path=None, contenido=None, sep=None, con_encabezado=True):
     """Lee un archivo delimitado y devuelve una lista de filas.
 
@@ -51,8 +64,12 @@ def leer_filas(path=None, contenido=None, sep=None, con_encabezado=True):
     Sin encabezado -> lista de listas (se accede por índice).
     """
     if contenido is None:
-        with open(path, "r", encoding="utf-8-sig", errors="replace") as f:
-            contenido = f.read()
+        with open(path, "rb") as f:
+            contenido = _decodificar(f.read())
+    else:
+        contenido = _decodificar(contenido)
+    # Normalizar fin de línea de Windows/Mac (evita romper csv con QUOTE_NONE).
+    contenido = contenido.replace("\r\n", "\n").replace("\r", "\n")
     if sep is None:
         primera = contenido.splitlines()[0] if contenido.strip() else ""
         sep = _detectar_sep(primera)
