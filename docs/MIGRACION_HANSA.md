@@ -72,8 +72,44 @@ diferencia). Así se puede migrar en paralelo mientras Hansa sigue operativo.
 - Codificación `utf-8-sig` (soporta el BOM que a veces agregan los export).
 - Separador autodetectado (tab / `;` / `,`).
 
-## Qué necesito de Muvin
+## Mapeos confirmados con los export reales de Muvin (6/sep)
 
-Una **muestra de export** de cada entidad (clientes, artículos, stock, precios).
-Con eso fijo el mapeo exacto de columnas y la migración queda lista para correr
-con los archivos completos.
+### Artículos (`Items6sept.TXT`, tabulado, 23 columnas, ~10.360 ítems)
+```python
+mapeo_items = {
+    "sku": "Cod",                 # A00001 (código único del ítem)
+    "nombre": "Descripcion",
+    "costo": "Precio Costo",      # ARS, formato 3.575,71
+    "codigo_barras": "Cod Barra",
+    "categoria": "Grupo",         # EMALT, AMEDI, ...
+}
+```
+Nota: cada `Cod` es un ítem único (el color va en la descripción, p. ej.
+"... - Brown"). Se agrupan por SKU raíz (6 caracteres). Migrado OK: 10.320
+productos / 10.358 variantes.
+
+### Stock (`Listastock6sept.TXT`, tabulado, 10 columnas, ~9.790 filas)
+```python
+mapeo_stock = {"sku": "Item", "cantidad": "En Stock"}
+```
+Migrado OK: 2.608 ítems con existencias (resto en 0). Ej.: A00001 → 39, A00023 → 1.
+
+### Contactos (`Contactos.TXT`, tabulado, ~90 columnas)
+Mapeo propuesto (a confirmar la columna de condición IVA con el archivo real):
+```python
+mapeo_clientes = {
+    "codigo_externo": "Code",     # 0002, C00001 — clave de deduplicación
+    "razon_social": "Name",
+    "nombre_fantasia": "Person",
+    "nro_doc": "VATNr",           # CUIT (ojo: consumidores con 11111111 ficticio)
+    "email": "eMail",
+    "telefono": "Phone",
+    "direccion": "InvAddr0",
+    "localidad": "InvAddr1",
+    "codigo_postal": "InvAddr2",
+    # "condicion_iva": "<columna con Resp. Insc. / Consum. Final>",
+}
+```
+Pendiente: el archivo completo (20 MB) supera el límite de descarga de la
+herramienta de Drive (10 MB). Se necesita dividirlo en partes <10 MB o
+re-exportarlo con menos columnas para migrarlo y confirmar la columna de IVA.

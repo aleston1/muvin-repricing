@@ -28,10 +28,12 @@ from .services import registrar_movimiento
 # Normalización de la condición de IVA de Hansa -> códigos del ERP.
 # Ajustable según cómo venga en el export.
 IVA_DEFAULT = {
-    "responsable inscripto": "RI", "resp. inscripto": "RI", "ri": "RI",
+    "responsable inscripto": "RI", "resp. inscripto": "RI",
+    "resp. insc.": "RI", "resp insc": "RI", "ri": "RI",
     "monotributo": "MONOTRIBUTO", "monotributista": "MONOTRIBUTO",
-    "exento": "EXENTO",
-    "consumidor final": "CF", "cf": "CF", "final": "CF",
+    "resp. monotributo": "MONOTRIBUTO", "resp monotributo": "MONOTRIBUTO",
+    "exento": "EXENTO", "iva exento": "EXENTO",
+    "consumidor final": "CF", "consum. final": "CF", "cf": "CF", "final": "CF",
 }
 
 
@@ -55,10 +57,12 @@ def leer_filas(path=None, contenido=None, sep=None, con_encabezado=True):
         primera = contenido.splitlines()[0] if contenido.strip() else ""
         sep = _detectar_sep(primera)
 
+    # QUOTE_NONE: los export de Hansa no usan comillas para delimitar; las
+    # comillas que aparecen (p. ej. RK 2000 "Bikes") son parte del texto.
     buf = io.StringIO(contenido)
     if con_encabezado:
-        return list(csv.DictReader(buf, delimiter=sep))
-    return [fila for fila in csv.reader(buf, delimiter=sep)]
+        return list(csv.DictReader(buf, delimiter=sep, quoting=csv.QUOTE_NONE))
+    return [fila for fila in csv.reader(buf, delimiter=sep, quoting=csv.QUOTE_NONE)]
 
 
 def _val(fila, mapeo, campo, default=None):
@@ -109,15 +113,21 @@ def importar_clientes(filas, mapeo, iva_map=None):
         if not razon:
             stats["omitidos"] += 1
             continue
+        codigo = _limpiar(_val(fila, mapeo, "codigo_externo"))
         tipo_doc = (_limpiar(_val(fila, mapeo, "tipo_doc")) or "CUIT").upper()
         nro_doc = _limpiar(_val(fila, mapeo, "nro_doc"))
         cond_raw = (_limpiar(_val(fila, mapeo, "condicion_iva")) or "").lower()
         condicion = iva_map.get(cond_raw, "CF")
 
+        # Deduplicación: por código de Hansa si está; si no, por documento.
         existente = None
-        if nro_doc:
+        if codigo:
+            existente = Cliente.query.filter_by(codigo_externo=codigo).first()
+        elif nro_doc:
             existente = Cliente.query.filter_by(tipo_doc=tipo_doc, nro_doc=nro_doc).first()
+
         c = existente or Cliente(razon_social=razon)
+        c.codigo_externo = codigo or c.codigo_externo
         c.razon_social = razon
         c.tipo_doc = tipo_doc
         c.nro_doc = nro_doc
@@ -143,7 +153,7 @@ def importar_productos(filas, mapeo):
     Campos: sku, nombre, marca, categoria, costo, descripcion, color, talle."""
     stats = {"productos_creados": 0, "variantes_creadas": 0,
              "variantes_actualizadas": 0, "omitidos": 0}
-    for fila in filas:
+    for i, fila in enumerate(filas):
         sku = _limpiar(_val(fila, mapeo, "sku"))
         if not sku:
             stats["omitidos"] += 1
@@ -168,17 +178,22 @@ def importar_productos(filas, mapeo):
         var = Variante.query.filter_by(sku=sku).first()
         color = _limpiar(_val(fila, mapeo, "color"))
         talle = _limpiar(_val(fila, mapeo, "talle"))
+        barras = _limpiar(_val(fila, mapeo, "codigo_barras"))
         if var:
             if color:
                 var.color = color
             if talle:
                 var.talle = talle
+            if barras:
+                var.codigo_barras = barras
             stats["variantes_actualizadas"] += 1
         else:
-            db.session.add(Variante(producto_id=prod.id, sku=sku,
-                                    color=color, talle=talle))
+            db.session.add(Variante(producto_id=prod.id, sku=sku, color=color,
+                                    talle=talle, codigo_barras=barras))
             stats["variantes_creadas"] += 1
-        db.session.commit()
+        if i % 500 == 0:  # commit por lotes (evita 10k+ commits sueltos)
+            db.session.commit()
+    db.session.commit()
     return stats
 
 
@@ -193,8 +208,10 @@ def importar_stock(filas, mapeo, deposito_codigo="CENTRAL"):
         db.session.add(dep)
         db.session.commit()
 
+    from .models import MovimientoStock, StockDeposito
+
     stats = {"ajustados": 0, "sin_variante": 0, "omitidos": 0}
-    for fila in filas:
+    for i, fila in enumerate(filas):
         sku = _limpiar(_val(fila, mapeo, "sku"))
         cantidad = _num(_val(fila, mapeo, "cantidad"))
         if not sku or cantidad is None:
@@ -204,10 +221,20 @@ def importar_stock(filas, mapeo, deposito_codigo="CENTRAL"):
         if not var:
             stats["sin_variante"] += 1
             continue
-        delta = cantidad - var.stock_total()
+        saldo = StockDeposito.query.filter_by(
+            variante_id=var.id, deposito_id=dep.id).first()
+        if saldo is None:
+            saldo = StockDeposito(variante_id=var.id, deposito_id=dep.id, cantidad=0)
+            db.session.add(saldo)
+        delta = cantidad - saldo.cantidad
         if abs(delta) > 1e-9:
-            registrar_movimiento(var.id, dep.id, "ajuste", delta,
-                                 motivo="Migración inicial desde Hansa",
-                                 permitir_negativo=True)
+            # Movimiento de ajuste (mantiene el ledger) + saldo, en lote.
+            db.session.add(MovimientoStock(
+                variante_id=var.id, deposito_id=dep.id, tipo="ajuste",
+                cantidad=delta, motivo="Migración inicial desde Hansa"))
+            saldo.cantidad = cantidad
             stats["ajustados"] += 1
+        if i % 500 == 0:
+            db.session.commit()
+    db.session.commit()
     return stats

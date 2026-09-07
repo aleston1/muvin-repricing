@@ -186,11 +186,15 @@ class Cliente(db.Model, TimestampMixin):
     __tablename__ = "clientes"
 
     id = Column(Integer, primary_key=True)
+    # Código de Hansa (u otro sistema origen). Es el identificador estable para
+    # deduplicar en la migración: el CUIT no sirve como clave porque muchos
+    # consumidores finales comparten un CUIT ficticio (11111111).
+    codigo_externo = Column(String(20), unique=True, index=True)
     razon_social = Column(String(255), nullable=False, index=True)
     nombre_fantasia = Column(String(255))
     # CUIT | CUIL | DNI | CDI | PASAPORTE
     tipo_doc = Column(String(20), default="CUIT")
-    nro_doc = Column(String(20), index=True)
+    nro_doc = Column(String(30), index=True)
     # RI (Resp. Inscripto) | MONOTRIBUTO | EXENTO | CF (Consumidor Final)
     condicion_iva = Column(String(30), default="CF")
     email = Column(String(180))
@@ -202,12 +206,10 @@ class Cliente(db.Model, TimestampMixin):
     notas = Column(Text)
     activo = Column(Boolean, default=True, nullable=False)
 
-    __table_args__ = (UniqueConstraint("tipo_doc", "nro_doc",
-                                       name="uq_cliente_documento"),)
-
     def to_dict(self):
         return {
             "id": self.id,
+            "codigo_externo": self.codigo_externo,
             "razon_social": self.razon_social,
             "nombre_fantasia": self.nombre_fantasia,
             "tipo_doc": self.tipo_doc,
