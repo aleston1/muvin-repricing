@@ -672,7 +672,9 @@ function render(){
   document.getElementById('st-ambas').textContent = faltaAmbas.length;
 
   let rows = ROWS;
-  if (soloStock) rows = rows.filter(r => r.stock_total > 0);
+  // El filtro de stock se ignora cuando estás buscando algo puntual: así podés
+  // encontrar y publicar un producto aunque todavía no tenga stock (ej. por llegar).
+  if (soloStock && !buscar) rows = rows.filter(r => r.stock_total > 0);
   if (buscar) rows = rows.filter(r =>
     r.sku_raiz.toLowerCase().includes(buscar) || (r.nombre||'').toLowerCase().includes(buscar));
   if (estado === 'falta')       rows = rows.filter(r => !r.ml.length || (tnDisponible && !r.tn.length));
