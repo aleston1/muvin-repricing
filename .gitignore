@@ -2,3 +2,5 @@ __pycache__/
 stock_cache.json
 costos.json
 equiv_cache.json
+erp.db
+*.pyc
