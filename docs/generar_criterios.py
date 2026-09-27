@@ -3,6 +3,8 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.comments import Comment
 import re
+import os
+GSHEETS = os.environ.get("GSHEETS") == "1"   # genera la versión para subir a Google Sheets
 
 wb = Workbook()
 H = Font(bold=True, color="FFFFFF"); HF = PatternFill("solid", fgColor="15181C")
@@ -255,11 +257,30 @@ for r in rows:
         (f'COUNTIFS({A}!$A$2:$A$2000,A{ri},{A}!$E$2:$E$2000,"")+COUNTIFS({A}!$A$2:$A$2000,A{ri},{A}!$F$2:$F$2000,"")>0', "altura por talle"),
         (f'AA{ri}<>"Sí"', "desactivado"),
     ]
-    ws.cell(ri, 4).value = "=" + "&".join(f'IF({c},"{t}; ","")' for c, t in conds)
-    ws.cell(ri, 3).value = f'=IF(LEN(D{ri})=0,"SÍ","NO")'
+    if not GSHEETS:
+        ws.cell(ri, 4).value = "=" + "&".join(f'IF({c},"{t}; ","")' for c, t in conds)
+        ws.cell(ri, 3).value = f'=IF(LEN(D{ri})=0,"SÍ","NO")'
     ws.cell(ri, 3).alignment = Alignment(horizontal="center")
     ws.cell(ri, 4).alignment = WR
     ws.cell(ri, 28).alignment = WR; ws.cell(ri, 29).alignment = WR
+if GSHEETS:
+    # Versión para Google Sheets: una sola fórmula por columna (ARRAYFORMULA)
+    # que cubre todas las filas, incluidas las que se agreguen después.
+    A = "'Altura por modelo'"
+    R = lambda c: f"{c}2:{c}1000"
+    cond = [
+        (f'{R("F")}=""', "tipo"), (f'{R("G")}=""', "propulsión"),
+        ("(" + "+".join(f'({R(c)}="Sí")' for c in "HIJKLM") + ")=0", "uso"),
+        (f'({R("N")}="")+({R("N")}="Revisar")', "silla de niños"), (f'{R("O")}=""', "neumáticos"), (f'{R("P")}=""', "terreno"),
+        (f'({R("G")}<>"Pedal")*({R("Q")}="")', "autonomía"), (f'({R("G")}<>"Pedal")*({R("R")}="")', "velocidad"),
+        (f'({R("S")}="")+({R("S")}="Revisar")', "licencia"), (f'{R("T")}=""', "plegable"), (f'{R("U")}=""', "peso"),
+        (f'({R("G")}<>"Pedal")*({R("V")}="")', "carga máx"),
+        (f'ISNUMBER(SEARCH("Bici",{R("F")}))*(COUNTIF({A}!A:A,{R("A")})=0)', "altura"),
+        (f'COUNTIFS({A}!A:A,{R("A")},{A}!E:E,"")+COUNTIFS({A}!A:A,{R("A")},{A}!F:F,"")', "altura por talle"),
+        (f'{R("AA")}<>"Sí"', "desactivado"),
+    ]
+    ws["D2"] = f'=ARRAYFORMULA(IF({R("A")}="","",' + "&".join(f'IF({c},"{t}; ","")' for c, t in cond) + "))"
+    ws["C2"] = f'=ARRAYFORMULA(IF({R("A")}="","",IF(LEN({R("D")})=0,"SÍ","NO")))'
 ws.auto_filter.ref = f"A1:{ws.cell(1, len(cols)).column_letter}{ws.max_row}"
 n = ws.max_row
 def dv(formula, rng):
