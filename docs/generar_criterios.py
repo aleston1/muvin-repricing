@@ -31,7 +31,7 @@ txt = [
  ("• Productos: una fila por producto de Tiendanube (vehículos). Acá se marca bajo qué criterios se recomienda cada uno.", False),
  ("• Accesorios: qué va en el combo (Esencial / Completo) según el vehículo y las respuestas.", False),
  ("• Sugerencias: TODAS las categorías de la tienda y cuándo mostrarlas después del combo ('Completá tu equipo', 'También te puede interesar', 'Para más adelante').", False),
- ("• Talles por modelo: altura → talle según la guía de CADA modelo (varía por marca y por modelo).", False),
+ ("• Altura por modelo: una fila por bici y por talle con su rango de altura (varía por marca y por modelo). Verde = cargado, amarillo = estimado, rojo = completar.", False),
  ("• Talles genéricos: respaldo cuando un modelo no tiene guía cargada, y altura por rodado para infantiles.", False),
  ("• Listas: valores válidos para los desplegables.", False),
  ("", False),
@@ -75,7 +75,7 @@ etapas = [
  (8, "Noche", "¿Vas a circular de noche?",
   "Casi siempre de día\nSí, también de noche", "Accesorios (luces / reflectivos)", "Define luces y chaleco del combo. No filtra vehículos.", "Siempre"),
  (9, "Altura", "¿Cuánto medís?", "Deslizador 90–210 cm",
-  "Altura mín / máx / Talles", "FILTRO: altura dentro del rango del producto. Si tiene talles, se busca una variante CON STOCK en el talle que corresponde según la tabla DE ESE MODELO (pestaña 'Talles por modelo'). Si el modelo no tiene tabla cargada, se usa 'Talles genéricos' y el asesor lo muestra como talle orientativo.", "Siempre (para chicos: altura del chico)"),
+  "Altura mín / máx / Talles", "FILTRO: altura dentro del rango del producto. Si tiene talles, se busca una variante CON STOCK en el talle que corresponde según la tabla DE ESE MODELO (pestaña 'Altura por modelo'). Si el modelo no tiene tabla cargada, se usa 'Talles genéricos' y el asesor lo muestra como talle orientativo.", "Siempre (para chicos: altura del chico)"),
  (10, "Peso", "¿Cuánto pesás aproximadamente?", "Menos de 70 kg\n70 a 90 kg\n90 a 110 kg\nMás de 110 kg",
   "Carga máx (kg)", "FILTRO: peso de la persona + 10 kg ≤ carga máxima. Clave en monopatines (algunos soportan solo 90 kg).", "Propulsión ≠ Pedal"),
  (11, "Presupuesto", "¿Cuánto querés invertir en total?", "Rangos + monto libre + 'No tengo tope'",
@@ -192,7 +192,7 @@ conv([(260343619,"Quick 6"),(260345186,"Street 700c"),(260346843,"Space"),(26034
       (349261838,"Roadkiller Disk"),(350940557,"Kentfield 3"),(350940977,"Kentfield 1 ST (caño bajo)"),
       (350941779,"Fairfax 1 ST (caño bajo)"),(353200327,"Fairfax 3 (2025)"),(354117226,"Stinson 2 ST")],
      "Bicicletas > Urbanas", "Bici urbana", {"diario","paseo"}, "Asfalto")
-add(349261743,"The Tentacle","Bicicletas > Urbanas + Dirt/Stunt (según API)","Bici de carga / urbana","Pedal",{"diario","paseo","carga","chicos"},"Asfalto",talles="Sí",est=("usos","terreno"),notas="La API de Tiendanube la devuelve en Urbanas y Dirt/Stunt (no en De Carga). ¿Quedó cruzada con las Alcatraz? Ver admin.")
+add(349261743,"The Tentacle","Bicicletas > Urbanas + De Carga","Bici de carga / urbana","Pedal",{"diario","paseo","carga","chicos"},"Asfalto",talles="No",est=("usos","terreno"))
 conv([(260340429,"Link D8"),(260340659,"Node D8"),(260341040,"Link C8"),(260341051,"Node D7i"),(260341563,"Eclipse D16"),
       (260342182,"Link A7"),(349261704,"Hopper Mini"),(349261708,"Hopper XL"),(349261749,"Krabi V-brake"),(349261759,"Krabi Disk"),
       (349261760,"Lentus Mini"),(349261768,"GOA V-brake"),(349261771,"Easy Disk"),(349261778,"Easy Fat"),(349261789,"Easy 8"),
@@ -212,8 +212,7 @@ conv([(260343873,"Trail 6 MTB 2021"),(260346819,"Cheetah"),(284282046,"Alpine Tr
       (354117068,"Pine Mountain 1 - 29"),(354117137,"Team Marin 1")],
      "Bicicletas > MTB", "Bici de montaña (MTB)", {"deporte"}, "Mixto y tierra", silla="No")
 conv([(284309508,"Alcatraz 1"),(354117074,"Alcatraz 2"),(354117085,"Alcatraz 24\" (2026)")],
-     "Bicicletas > De Carga (según API)", "Bici dirt/stunt", {"deporte"}, "Todo terreno", silla="No",
-     notas="La API de Tiendanube la devuelve dentro de 'De Carga' (ID 30153580). Es dirt jump: verificar categorías en el admin. Talles Short/Long (ver Talles por modelo).")
+     "Bicicletas > Dirt/Stunt", "Bici dirt/stunt", {"deporte"}, "Todo terreno", silla="No")
 # Infantiles
 def rango(n):
     m = re.search(r'(\d+(?:[.,]5)?)\s*"?(?: Race)?$', n.replace("\"",""))
@@ -359,34 +358,128 @@ for row in ws.iter_rows(min_row=2):
 ws.append([]); ws.append(["Regla de rotación: en cada visita se elige 1 producto con stock por categoría, alternando entre visitas (los menos mostrados primero), para que TODO el catálogo tenga exposición. 'Prioridad' en Productos puede fijar uno."])
 ws.cell(ws.max_row, 1).font = Font(italic=True)
 
-# ------------------------------------------------------------ 7. Talles por modelo
-ws = wb.create_sheet("Talles por modelo")
-header(ws, ["Marca", "Modelo o familia (texto en el nombre del producto)", "Talle", "Altura desde (cm)", "Altura hasta (cm)", "Fuente", "Estado"],
-       [12, 40, 12, 14, 14, 36, 22])
-FUENTE = "Marin Sizing Guide 2022 (PDF oficial)"
-def tt(marca, modelos, tabla, estado="Validar con guía vigente"):
-    for m in modelos:
-        for t, lo, hi in tabla:
-            ws.append([marca, m, t, lo, hi, FUENTE, estado])
-            ws.cell(ws.max_row, 7).fill = EST
-tt("Marin", ["Kentfield"], [("S",157,170),("M",168,178),("L",175,188),("XL",185,196)])
-tt("Marin", ["Fairfax","Presidio"], [("XS",150,157),("S",155,168),("M",165,178),("L",175,188),("XL",185,193)])
-tt("Marin", ["Muirwoods"], [("XS",150,160),("S",157,170),("M",168,180),("L",178,188),("XL",185,196)])
-tt("Marin", ["Stinson"], [("S",152,165),("M",163,175),("L",173,185),("XL",183,191)])
-tt("Marin", ["Stinson ST", "Stinson 2 ST"], [("S",152,165),("M",163,175),("L",173,180)])
-tt("Marin", ["DSX"], [("S",157,168),("M",165,178),("L",175,188),("XL",185,196)])
-tt("Marin", ["Nicasio"], [("47",146,152),("50",150,160),("52",157,165),("54",163,175),("56",173,183),("58",180,188),("60",185,196)])
-tt("Marin", ["Gestalt"], [("50",152,160),("52",157,165),("54",163,175),("56",173,183),("58",180,188),("60",185,196)])
-tt("Marin", ["Four Corners"], [("XS",150,160),("S",157,170),("M",168,180),("L",178,188),("XL",185,196)])
-tt("Marin", ["Bobcat Trail","Bolinas Ridge","San Quentin 1","Pine Mountain","Team Marin"], [("S",160,168),("M",165,178),("L",175,185),("XL",183,196)], "Validar: asumido 'Hardtail 29'")
-tt("Marin", ["Rift Zone 1","Rift Zone 2 29","Alpine Trail","Apine Trail","Rift Zone E2"], [("S",160,170),("M",168,180),("L",178,188),("XL",185,196)])
-tt("Marin", ["El Roy"], [("Regular",165,178),("Grande",175,196)])
-tt("Marin", ["Alcatraz 1","Alcatraz 2"], [("Short",152,175),("Long",170,196)])
-tt("Marin", ["Rift Zone 26"], [("Único",140,157)])
-tt("Marin", ["San Quentin 24","Bayview Trail"], [("Único",122,145)])
-ws.append([]); ws.append(["Cómo lo usa el asesor: busca la fila cuya Marca y 'Modelo o familia' aparezcan en el nombre del producto (gana la coincidencia más larga). Si no hay, usa 'Talles genéricos' y muestra el talle como orientativo."])
-ws.cell(ws.max_row, 1).font = Font(italic=True)
-ws.append(["Pendiente: cargar guías vigentes de Marin (2025/26), Shulz, Tern, Dahon, Kross, Cannondale, Liv y el resto de las marcas."])
+
+# ------------------------------------------------------------ 7b. Altura por modelo (una fila por bici y talle)
+ws = wb.create_sheet("Altura por modelo")
+header(ws, ["ID Tiendanube", "Producto", "Marca", "Talle (como está en TN)", "Altura desde (cm)", "Altura hasta (cm)",
+            "Fuente", "Estado", "¿La descripción en TN ya lo tiene?"], [13, 30, 18, 18, 13, 13, 34, 22, 18])
+MG = "Guía Marin 2022 (PDF)"
+OK = PatternFill("solid", fgColor="E5F4EA"); FALTA = PatternFill("solid", fgColor="FCE4E4")
+# Tablas de la guía Marin 2022 (cm aprox., leídas del PDF)
+T = {
+ "kentfield": {"S":(157,170),"M":(168,178),"L":(175,188),"XL":(185,196)},
+ "fairfax":   {"XS":(150,157),"S":(155,168),"M":(165,178),"L":(175,188),"XL":(185,193)},
+ "muirwoods": {"XS":(150,160),"S":(157,170),"M":(168,180),"L":(178,188),"XL":(185,196)},
+ "stinson":   {"S":(152,165),"M":(163,175),"L":(173,185),"XL":(183,191)},
+ "stinson st":{"S":(152,165),"M":(163,175),"L":(173,180)},
+ "dsx":       {"S":(157,168),"M":(165,178),"L":(175,188),"XL":(185,196)},
+ "nicasio":   {"47":(146,152),"50":(150,160),"52":(157,165),"54":(163,175),"56":(173,183),"58":(180,188),"60":(185,196)},
+ "gestalt":   {"50":(152,160),"52":(157,165),"54":(163,175),"56":(173,183),"58":(180,188),"60":(185,196)},
+ "four corners": {"XS":(150,160),"S":(157,170),"M":(168,180),"L":(178,188),"XL":(185,196)},
+ "growing":   {"XS":(146,157),"S":(157,165),"M":(163,178),"L":(175,185),"XL":(183,193)},
+ "hardtail29":{"S":(160,168),"M":(165,178),"L":(175,185),"XL":(183,193)},
+ "pine":      {"S":(160,168),"M":(165,178),"L":(175,185),"XL":(183,193)},
+ "rift29":    {"S":(160,170),"M":(168,180),"L":(178,188),"XL":(185,196)},
+ "rift275":   {"XS":(152,163),"S":(160,170)},
+ "alcatraz":  {"SHORT":(150,175),"LONG":(170,196)},
+}
+def letra(t):
+    t = str(t).upper().replace("CM","").strip()
+    m = re.match(r"^(XXS|XS|S|M|L|XL|XXL|SHORT|LONG|\d{2})", t.replace(" ",""))
+    return m.group(1) if m else t
+def fila(pid, prod, marca, talle, rango=None, fuente="", estado=None, desc="A verificar"):
+    lo, hi = rango if rango else (None, None)
+    if estado is None:
+        estado = "Completo" if rango else "COMPLETAR"
+    ws.append([pid, prod, marca, talle, lo, hi, fuente if rango else "", estado, desc])
+    fill = OK if estado == "Completo" else (EST if rango else FALTA)
+    for c in (5, 6, 8): ws.cell(ws.max_row, c).fill = fill
+def marin(pid, prod, talles, tabla, estado="Completo", extra=None):
+    for t in talles:
+        r = T[tabla].get(letra(t)) or (T[extra].get(letra(t)) if extra else None)
+        fila(pid, prod, "Marin", t, r, MG, estado if r else "COMPLETAR (no está en la guía)")
+def libre(pid, prod, marca, talles, desc="A verificar"):
+    for t in talles: fila(pid, prod, marca, t, desc=desc)
+SMLXL = ["S","M","L","XL"]; XS_XL = ["XS","S","M","L","XL"]
+# --- Marin urbanas
+marin(283613255,"Kentfield 1",SMLXL,"kentfield")
+marin(284254494,"Kentfield 2",SMLXL,"kentfield")
+marin(350940557,"Kentfield 3",SMLXL,"kentfield")
+marin(350940977,"Kentfield 1 ST (caño bajo)",["S","M","L"],"kentfield","Estimado: guía de Kentfield (sin ST)")
+marin(284230738,"Fairfax 1 (2025)",SMLXL,"fairfax")
+marin(350941779,"Fairfax 1 ST (caño bajo)",["S","M","L"],"fairfax","Estimado: guía de Fairfax (sin ST)")
+marin(353200327,"Fairfax 3 (2025)",XS_XL,"fairfax")
+marin(284243181,"Presidio 1 (2025)",SMLXL,"fairfax")
+marin(284246048,"Muirwoods (2022)",SMLXL,"muirwoods")
+marin(297493608,"Stinson 1",SMLXL,"stinson")
+marin(297519717,"Stinson 2",SMLXL,"stinson")
+marin(354117226,"Stinson 2 ST",XS_XL,"stinson st")
+# --- Marin gravel
+marin(283042882,"Nicasio (2023)",["50cm","52cm","54cm","56cm","58cm","60cm"],"nicasio")
+marin(283050150,"Nicasio 1 (2025)",["52","54","56","58","60"],"nicasio")
+marin(345977305,"Nicasio+ Sword (650B)",["52","54","56"],"nicasio","Estimado: guía de Nicasio")
+marin(350939845,"Nicasio 1 ST (caño bajo)",["47","50","52","54","56"],"nicasio","Estimado: guía de Nicasio (sin ST)")
+marin(283064870,"Four Corners 1 Sword (2025)",SMLXL,"four corners")
+marin(350940160,"Four Corners 1 Cues (2026)",["XS (ROD27,5)","S (ROD27,5)","M (ROD700)","L (ROD700)","XL (ROD700)"],"four corners")
+marin(297455735,"DSX 1 (2026)",SMLXL,"dsx")
+marin(297486793,"DSX 2 (2026)",SMLXL,"dsx")
+marin(351124297,"Gestalt (2026)",["50","52","54","56","58","60"],"gestalt")
+# --- Marin MTB
+marin(297298148,"Bolinas Ridge 1",["M (ROD29)","L (ROD29)","XL (ROD29)"],"growing","Estimado: guía 'Growing Wheel Size'")
+marin(297298255,"Bolinas Ridge 2",["XS (ROD27,5)","S (ROD27,5)","M (ROD29)","L (ROD29)","XL (ROD29)"],"growing","Estimado: guía 'Growing Wheel Size'")
+marin(297318978,"Bobcat Trail 4 (2025)",["M (ROD29)","L (ROD29)","XL (ROD29)"],"growing","Estimado: guía 'Growing Wheel Size'")
+marin(353164254,"Bobcat Trail 5 (2025)",XS_XL,"growing","Estimado: guía 'Growing Wheel Size'")
+marin(297327810,"San Quentin 1",["S (ROD27,5)","M (ROD29)","L (ROD29)","XL (ROD29)"],"growing","Estimado: guía 'Growing Wheel Size'")
+marin(354117068,"Pine Mountain 1 - 29",XS_XL,"pine")
+marin(354117137,"Team Marin 1",XS_XL,"hardtail29","Estimado: guía 'Hardtail 29'")
+marin(352623351,"Rift Zone 1 (2026)",['XS(27,5")','S(27,5")','M(29")','L(29")','XL(29")'],"rift29",extra="rift275")
+marin(353164248,"Rift Zone 2 29 (2025)",XS_XL,"rift29")
+marin(284282046,"Alpine Trail Carbon 1 (2024)",XS_XL,"rift29","Completo")
+marin(350943156,"Apine Trail E Shimano",SMLXL,"rift29")
+marin(354117181,"Rift Zone E2 SHIMANO (2024)",XS_XL,"rift29")
+fila(284296407,"El Roy (2023)","Marin","XS / S / M / L / XL",estado="COMPLETAR: la guía usa Regular/Grande")
+marin(284309508,"Alcatraz 1",["Short","Long"],"alcatraz")
+fila(354117074,"Alcatraz 2","Marin","XS / S / M / L / XL",estado="COMPLETAR: la guía usa Short/Long")
+fila(354117085,'Alcatraz 24" (2026)',"Marin","Único",estado="COMPLETAR")
+# --- Otras marcas con talles
+libre(260343619,"Quick 6","Cannondale (a confirmar)",["S","M","L"])
+libre(260343873,"Trail 6 MTB 2021","Cannondale (a confirmar)",["XS","S","M","L","XL"])
+libre(260348567,"Alight 2 DD Disc","Liv (a confirmar)",["S","M","L"])
+libre(260346843,"Space","",["S","M","L"])
+libre(260346819,"Cheetah","",SMLXL)
+for pid, n, ts in [(349261735,"Roadkiller Lady Disk",["S","M"]),(349261838,"Roadkiller Disk",["M","L"]),(349261744,"I Am Single",["S","M","L"]),
+                   (349261748,"Flower Bud Fairy",["S"]),(349261756,"VHS Player",["S","M","L"]),(349261782,"Lucky Clover",["S","M","L"]),
+                   (349261785,"Lucky Clover Low",["S","M"]),(349261732,"Wanderer",["S","M","L"]),(349261740,"The Lightning",["S","M","L"]),
+                   (349261840,"Mom's Favorite",["M","XL"]),(349261728,"Boys Don't Cry",["S","M","L"]),(349261738,"Lone Ranger",["S","M","L"]),
+                   (349261821,"Sunday",["S","M","L"]),(349261825,"Sunday Low",["S","M"]),(349261827,"Big Time",["S","M","L"]),
+                   (359825099,"Esker 5.0",["M","L"])]:
+    libre(pid, n, "", ts)
+# --- Talle único
+FT = "Ficha del producto en TN"
+for pid, n, marca, r in [(260342361,"2Fold 20","",(140,185)),(260344367,"2Fold 20 Fat","",(140,185)),(260343629,"HSD P9","Tern",(150,195)),
+                         (263963220,"Quick Haul P9","Tern",(160,195)),(349261766,"E-Krabi","",(160,200)),(349261769,"E-GOA","",(150,190)),
+                         (349261777,"E-Easy Fat","",(160,200))]:
+    fila(pid, n, marca, "Único", r, FT, desc="Sí")
+for pid, n in [(260345186,"Street 700c"),(349261743,"The Tentacle"),(260340429,"Link D8"),(260340659,"Node D8"),(260341040,"Link C8"),
+               (260341051,"Node D7i"),(260341563,"Eclipse D16"),(260342182,"Link A7"),(349261704,"Hopper Mini"),(349261708,"Hopper XL"),
+               (349261749,"Krabi V-brake"),(349261759,"Krabi Disk"),(349261760,"Lentus Mini"),(349261768,"GOA V-brake"),(349261771,"Easy Disk"),
+               (349261778,"Easy Fat"),(349261789,"Easy 8"),(349261794,"Speed Disk"),(349261833,"Easy Fat Nexus"),(349261834,"Lentus 8"),
+               (321841921,"Vecocraft Foldy-E Einhell"),(260347235,"Brina2 X1000"),(264034402,"Nbd S5I"),(273218901,"Slim"),
+               (273255228,"X350"),(273267951,"Enduro Pro X"),(291838862,"Rider FT01 - 750W"),(338519904,"Rider FT01 - 1000W"),
+               (314027238,"Segway Xyber"),(314180547,"Chopper FT02"),(339104476,"HTK 1000M"),(347573632,"Ponyboy"),(361026582,"City")]:
+    fila(pid, n, "", "Único")
+# --- Infantiles (talle único, por rodado)
+fila(304920554,'Bayview Trail 24"',"Marin","Único",(122,142),MG,"Completo")
+fila(354117262,'San Quentin 24"',"Marin","Único",(122,142),MG,"Completo")
+fila(353164252,"Rift Zone 26","Marin","Único",(137,157),MG,"Completo")
+fila(305009753,'Bayview Trail 20"',"Marin","Único")
+for pid, n in [(260342484,"Power"),(260342490,"Jumper"),(349261711,"Bubble 14 Race"),(349261714,"Bubble 16 Race"),(349261795,"Bubble 20 Race"),
+               (349261721,"Bubble 24 Race"),(349261724,"Bubble 26 Race"),(349261718,"Bubble 27,5 Race"),(349261814,"Chloe 16 Race"),
+               (349261799,"Chloe 20 Race"),(349261804,"Chloe 24 Race"),(349261809,"Chloe 26 Race"),(349261720,"Chloe 27.5 Race"),(350552513,"Ant")]:
+    fila(pid, n, "", "Único")
+ws.auto_filter.ref = f"A1:I{ws.max_row}"
+dv2 = DataValidation(type="list", formula1='"Sí,No,A verificar"', allow_blank=True); ws.add_data_validation(dv2); dv2.add(f"I2:I{ws.max_row+100}")
+ws.append([]); ws.append(["Verde = ya cargado. Amarillo = estimado con la guía de un modelo parecido (validar). Rojo = COMPLETAR. Una vez completo, este rango se usa para recomendar el talle y se puede agregar al final de la descripción de cada producto en Tiendanube."])
 ws.cell(ws.max_row, 1).font = Font(italic=True)
 
 # ------------------------------------------------------------ 8. Talles genéricos
@@ -398,7 +491,7 @@ ws.append([]); ws.append(["Rodado (infantiles)", "Altura desde (cm)", "Altura ha
 for c in ws[ws.max_row]: c.font = Font(bold=True)
 for t in [('12"',85,100,"2–4 años"),('14"',95,110,"3–5 años"),('16"',105,120,"4–6 años"),('20"',115,135,"6–9 años"),
           ('24"',130,150,"8–12 años"),('26"',145,165,"11+ años"),('27,5"',150,175,"juvenil")]: ws.append(list(t))
-ws.append([]); ws.append(["Solo se usa si el modelo no está en 'Talles por modelo'. El asesor lo muestra como talle orientativo."])
+ws.append([]); ws.append(["Solo se usa si el modelo no está en 'Altura por modelo'. El asesor lo muestra como talle orientativo."])
 
 # ------------------------------------------------------------ 9. Listas
 ws = wb.create_sheet("Listas")
