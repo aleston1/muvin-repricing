@@ -11,6 +11,9 @@ CORS(app)
 from sync import sync_bp
 app.register_blueprint(sync_bp)
 
+from asesor import asesor_bp
+app.register_blueprint(asesor_bp)
+
 TOKEN   = os.environ.get("ML_TOKEN", "")
 USER_ID = os.environ.get("ML_USER_ID", "246901020")
 BASE    = "https://api.mercadolibre.com"
@@ -60,6 +63,10 @@ def index():
 @app.route("/sync")
 def sync_page():
     return _sin_cache(app.send_static_file("sync.html"))
+
+@app.route("/asesor")
+def asesor_page():
+    return _sin_cache(app.send_static_file("asesor.html"))
 
 @app.route("/api/items")
 def get_items():

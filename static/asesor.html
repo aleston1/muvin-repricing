@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Encontrá tu bici ideal — Muvin</title>
+<meta name="description" content="Respondé unas preguntas y te recomendamos la bici justa para vos, en tu talle y con los accesorios que necesitás.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Colores de marca: cambiá estas variables para alinear con la tienda. */
+  :root{
+    --ink:#15181c; --ink-2:#3b4148; --muted:#6b737c; --line:#e6e3dc;
+    --bg:#f7f5f0; --card:#ffffff; --soft:#efece4;
+    --accent:#e8532a; --accent-ink:#ffffff; --accent-soft:#fdebe4;
+    --ok:#1f8a4c; --ok-soft:#e5f4ea; --warn:#9a6700; --warn-soft:#fdf3d8;
+    --radius:18px; --shadow:0 1px 2px rgba(20,20,20,.04),0 8px 24px rgba(20,20,20,.06);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--ink);font-size:16px;line-height:1.45;min-height:100vh}
+  button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+  a{color:inherit}
+  img{display:block;max-width:100%}
+  .wrap{max-width:760px;margin:0 auto;padding:0 16px}
+
+  /* ---------- top bar ---------- */
+  .top{position:sticky;top:0;z-index:20;background:rgba(247,245,240,.92);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .top-in{display:flex;align-items:center;gap:12px;height:60px}
+  .brand{font-weight:800;letter-spacing:-.02em;font-size:20px;text-decoration:none}
+  .brand span{color:var(--accent)}
+  .top-sp{flex:1}
+  .back{display:none;align-items:center;gap:6px;font-size:14px;color:var(--ink-2);padding:8px 10px;border-radius:10px}
+  .back:hover{background:var(--soft)}
+  .back.show{display:inline-flex}
+  .bar{height:4px;background:var(--line)}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .35s ease}
+
+  /* ---------- intro ---------- */
+  .hero{padding:48px 0 32px;text-align:left}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:6px 12px;border-radius:99px;margin-bottom:18px}
+  .hero h1{font-size:clamp(32px,6vw,48px);line-height:1.05;letter-spacing:-.03em;font-weight:800;margin-bottom:16px}
+  .hero p{font-size:18px;color:var(--ink-2);max-width:560px;margin-bottom:28px}
+  .perks{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:36px 0 12px}
+  .perk{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .perk b{display:block;font-size:14px;margin-bottom:2px}
+  .perk span{font-size:13px;color:var(--muted)}
+  @media (max-width:560px){.perks{grid-template-columns:1fr}}
+
+  .cta{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--ink);color:#fff;font-weight:600;font-size:17px;padding:16px 28px;border-radius:14px;transition:transform .12s ease,background .15s}
+  .cta:hover{background:#000}
+  .cta:active{transform:scale(.98)}
+  .cta:disabled{background:#b9b6ae;cursor:default}
+  .cta.accent{background:var(--accent)}
+  .cta.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+  .cta.ghost:hover{background:var(--card)}
+  .cta.block{width:100%}
+
+  /* ---------- pasos ---------- */
+  .step{padding:36px 0 120px;animation:in .35s ease}
+  @keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .step-n{font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px}
+  .step h2{font-size:clamp(24px,4.5vw,32px);line-height:1.15;letter-spacing:-.02em;font-weight:800;margin-bottom:8px}
+  .step .sub{color:var(--ink-2);margin-bottom:24px}
+  .opts{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .opts.one{grid-template-columns:1fr}
+  @media (max-width:560px){.opts{grid-template-columns:1fr}}
+  .opt{display:flex;align-items:flex-start;gap:14px;text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius);padding:16px;transition:border-color .15s,box-shadow .15s,transform .1s}
+  .opt:hover{border-color:#cfcabf;box-shadow:var(--shadow)}
+  .opt:active{transform:scale(.99)}
+  .opt.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+  .opt .ic{flex:0 0 44px;height:44px;border-radius:12px;background:var(--soft);display:grid;place-items:center}
+  .opt.sel .ic{background:var(--ink);color:#fff}
+  .opt .ic svg{width:24px;height:24px}
+  .opt b{display:block;font-size:16px;font-weight:600;margin-bottom:2px}
+  .opt span{font-size:14px;color:var(--muted)}
+  .opt .chk{margin-left:auto;flex:0 0 22px;height:22px;border-radius:7px;border:1.5px solid var(--line);display:grid;place-items:center}
+  .opt.sel .chk{background:var(--ink);border-color:var(--ink);color:#fff}
+  .opt .chk svg{width:14px;height:14px;opacity:0}
+  .opt.sel .chk svg{opacity:1}
+
+  .foot{position:fixed;left:0;right:0;bottom:0;padding:14px 16px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--bg) 70%,rgba(247,245,240,0));z-index:15}
+  .foot .wrap{padding:0}
+  .hint{margin-top:18px;font-size:14px;color:var(--ink-2);background:var(--card);border:1px dashed var(--line);border-radius:14px;padding:12px 14px}
+
+  /* altura */
+  .altura-box{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px 20px;text-align:center}
+  .altura-val{font-size:64px;font-weight:800;letter-spacing:-.04em;line-height:1}
+  .altura-val small{font-size:22px;color:var(--muted);font-weight:600;margin-left:4px}
+  .altura-talle{margin:10px 0 22px;color:var(--ink-2);font-size:15px;min-height:22px}
+  .altura-talle b{color:var(--ink)}
+  input[type=range]{width:100%;-webkit-appearance:none;appearance:none;height:8px;border-radius:99px;background:var(--soft);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:34px;height:34px;border-radius:50%;background:var(--ink);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:grab}
+  input[type=range]::-moz-range-thumb{width:28px;height:28px;border-radius:50%;background:var(--ink);border:4px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.25);cursor:grab}
+  .steppers{display:flex;justify-content:center;gap:10px;margin-top:16px}
+  .steppers button{width:44px;height:44px;border-radius:12px;background:var(--soft);font-size:22px;font-weight:600}
+
+  /* presupuesto */
+  .money{display:flex;align-items:center;background:var(--card);border:1.5px solid var(--line);border-radius:14px;padding:0 16px;margin-top:12px}
+  .money:focus-within{border-color:var(--ink)}
+  .money span{font-size:20px;font-weight:600;color:var(--muted)}
+  .money input{flex:1;border:0;outline:0;background:none;font:inherit;font-size:20px;font-weight:600;padding:14px 8px;min-width:0}
+
+  /* ---------- loading ---------- */
+  .loading{padding:90px 0;text-align:center}
+  .wheel{width:64px;height:64px;margin:0 auto 22px;border-radius:50%;border:5px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .loading h2{font-size:22px;margin-bottom:6px}
+  .loading p{color:var(--muted);min-height:24px;transition:opacity .2s}
+
+  /* ---------- resultados ---------- */
+  .res-head{padding:36px 0 8px}
+  .res-head h1{font-size:clamp(26px,5vw,38px);letter-spacing:-.03em;line-height:1.1;font-weight:800;margin-bottom:10px}
+  .res-head p{color:var(--ink-2)}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:500;background:var(--card);border:1px solid var(--line);border-radius:99px;padding:7px 12px}
+  .chip:hover{border-color:var(--ink)}
+  .chip svg{width:12px;height:12px;color:var(--muted)}
+  .notice{background:var(--warn-soft);color:#5c4300;border-radius:14px;padding:14px 16px;margin:16px 0;font-size:15px}
+  .notice a{font-weight:600}
+
+  .bike{background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;margin:22px 0;box-shadow:var(--shadow)}
+  .bike.top-pick{border:2px solid var(--ink)}
+  .ribbon{background:var(--ink);color:#fff;font-size:13px;font-weight:600;padding:9px 18px;display:flex;align-items:center;gap:8px}
+  .bike-main{display:grid;grid-template-columns:1fr 1.1fr;gap:0}
+  @media (max-width:640px){.bike-main{grid-template-columns:1fr}}
+  .bike-img{background:#fff;display:grid;place-items:center;padding:18px;min-height:240px;border-right:1px solid var(--line)}
+  @media (max-width:640px){.bike-img{border-right:0;border-bottom:1px solid var(--line)}}
+  .bike-img img{max-height:280px;object-fit:contain}
+  .bike-info{padding:22px}
+  .bike-type{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+  .bike-info h3{font-size:26px;letter-spacing:-.02em;line-height:1.1;margin-bottom:4px}
+  .bike-brand{color:var(--muted);font-size:14px;margin-bottom:14px}
+  .price{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .price b{font-size:28px;letter-spacing:-.02em}
+  .price s{color:var(--muted);font-size:15px}
+  .off{font-size:12px;font-weight:700;color:var(--ok);background:var(--ok-soft);padding:3px 8px;border-radius:99px}
+  .budget-tag{display:inline-flex;margin-top:8px;font-size:13px;font-weight:600;padding:4px 10px;border-radius:99px}
+  .budget-tag.ok{background:var(--ok-soft);color:var(--ok)}
+  .budget-tag.over{background:var(--warn-soft);color:var(--warn)}
+  .facts{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+  .fact{font-size:13px;background:var(--soft);border-radius:10px;padding:7px 10px}
+  .fact b{font-weight:600}
+  .why{list-style:none;display:grid;gap:8px;margin:4px 0 18px}
+  .why li{display:flex;gap:10px;font-size:15px;color:var(--ink-2)}
+  .why li svg{flex:0 0 18px;height:18px;color:var(--ok);margin-top:2px}
+
+  .combos{border-top:1px solid var(--line);padding:20px 22px 22px;background:#fcfbf8}
+  .combo-toggle{display:flex;width:100%;align-items:center;justify-content:center;gap:8px;border-top:1px solid var(--line);padding:16px;font-size:15px;font-weight:500;color:var(--ink-2);background:#fcfbf8}
+  .combo-toggle:hover{color:var(--ink)}
+  .combos h4{font-size:17px;margin-bottom:4px}
+  .combos .sub2{font-size:14px;color:var(--muted);margin-bottom:14px}
+  .tabs{display:inline-flex;background:var(--soft);padding:4px;border-radius:12px;margin-bottom:14px}
+  .tab{padding:8px 14px;border-radius:9px;font-size:14px;font-weight:600;color:var(--ink-2)}
+  .tab.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .combo-desc{font-size:14px;color:var(--ink-2);margin-bottom:12px}
+  .items{display:grid;gap:10px}
+  .item{display:grid;grid-template-columns:64px 1fr auto;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px;text-decoration:none}
+  .item:hover{border-color:#cfcabf}
+  .item .th{width:64px;height:64px;border-radius:10px;background:#fff;display:grid;place-items:center;overflow:hidden;border:1px solid var(--line)}
+  .item .th img{max-width:100%;max-height:100%;object-fit:contain}
+  .item .rol{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+  .item .nm{font-weight:600;font-size:15px;line-height:1.25}
+  .item .pq{font-size:13px;color:var(--muted);line-height:1.35;margin-top:2px}
+  .item .pr{font-weight:700;font-size:15px;white-space:nowrap;text-align:right}
+  .item .pr s{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+  @media (max-width:480px){.item{grid-template-columns:52px 1fr}.item .th{width:52px;height:52px}.item .pr{grid-column:2;text-align:left}}
+  .total{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;padding:14px 16px;background:var(--ink);color:#fff;border-radius:14px}
+  .total small{display:block;font-size:12px;opacity:.7}
+  .total b{font-size:22px;letter-spacing:-.02em}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+  .actions .cta{flex:1 1 200px;font-size:15px;padding:13px 18px}
+
+  .empty{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px;margin:22px 0;text-align:center}
+  .empty h3{font-size:20px;margin-bottom:8px}
+  .empty p{color:var(--ink-2);margin-bottom:18px}
+
+  /* ---------- chat ---------- */
+  .chat{background:var(--card);border:1px solid var(--line);border-radius:22px;margin:30px 0;overflow:hidden}
+  .chat-h{padding:20px 22px 6px}
+  .chat-h h3{font-size:20px;letter-spacing:-.01em}
+  .chat-h p{color:var(--muted);font-size:14px}
+  .msgs{padding:10px 22px;display:grid;gap:10px;max-height:460px;overflow:auto}
+  .msg{max-width:88%;padding:11px 14px;border-radius:16px;font-size:15px;white-space:pre-wrap}
+  .msg.u{justify-self:end;background:var(--ink);color:#fff;border-bottom-right-radius:6px}
+  .msg.a{justify-self:start;background:var(--soft);border-bottom-left-radius:6px}
+  .msg.typing{color:var(--muted)}
+  .sugs{display:flex;flex-wrap:wrap;gap:8px;padding:6px 22px 4px}
+  .sug{font-size:13px;border:1px solid var(--line);border-radius:99px;padding:7px 12px;background:#fff}
+  .sug:hover{border-color:var(--ink)}
+  .ask{display:flex;gap:8px;padding:14px 16px 18px}
+  .ask input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;font:inherit;font-size:16px;outline:0}
+  .ask input:focus{border-color:var(--ink)}
+  .ask button{background:var(--accent);color:#fff;border-radius:12px;padding:0 18px;font-weight:600}
+  .ask button:disabled{opacity:.5}
+
+  .wa{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px 18px;margin:18px 0 60px;text-decoration:none}
+  .wa .wa-ic{flex:0 0 44px;height:44px;border-radius:50%;background:#25d366;color:#fff;display:grid;place-items:center}
+  .wa b{display:block}
+  .wa span{font-size:14px;color:var(--muted)}
+  .restart{display:block;margin:0 auto 60px;color:var(--muted);font-size:14px;text-decoration:underline}
+  .hidden{display:none!important}
+  :focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-in">
+    <button class="back" id="back" aria-label="Volver a la pregunta anterior">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      Atrás
+    </button>
+    <a class="brand" href="/asesor" id="brand">muvin<span>.</span></a>
+    <div class="top-sp"></div>
+    <span id="stepcount" style="font-size:13px;color:var(--muted)"></span>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+</header>
+
+<main class="wrap" id="app"></main>
+
+<script>
+/* ======================================================================
+   Asesor Muvin — cuestionario + resultados + chat.
+   Las respuestas viajan en el hash de la URL (#r=...), así el resultado se
+   puede compartir o retomar, y "Atrás" del navegador funciona.
+   ====================================================================== */
+const $ = s => document.querySelector(s);
+const app = $('#app');
+const fmt = n => '$' + Math.round(n).toLocaleString('es-AR');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const I = {
+  city:'<path d="M3 21h18M5 21V7l6-4v18M11 21V11h8v10M8 9v.01M8 13v.01M8 17v.01M15 15v.01M15 18v.01"/>',
+  train:'<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 11h14M9 21l-2-4M15 21l2-4M9 14v.01M15 14v.01"/>',
+  leaf:'<path d="M11 20A7 7 0 0 1 4 13c0-6 7-10 16-10 0 9-4 16-10 16"/><path d="M4 21c3-5 6-8 10-10"/>',
+  speed:'<path d="M12 14l4-4"/><path d="M3.3 16a9 9 0 1 1 17.4 0"/>',
+  mount:'<path d="M3 20l6-10 4 6 3-4 5 8z"/>',
+  box:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/>',
+  short:'<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h4a4 4 0 0 0 0-8h-.5"/>',
+  mid:'<circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M7 19h6a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h8"/>',
+  long:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  flat:'<path d="M2 16h20"/><circle cx="7" cy="12" r="2"/><circle cx="17" cy="12" r="2"/>',
+  hill:'<path d="M2 20l7-12 5 7 3-3 5 8z"/>',
+  dirt:'<path d="M2 18c3-2 5-2 8 0s5 2 8 0 3-1 4-1M5 13h.01M10 11h.01M15 13h.01M19 10h.01"/>',
+  bolt:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  leg:'<circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-8h5l3 8M10 9l2 8"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01"/>',
+  home:'<path d="M3 11l9-8 9 8M5 10v10h14V10"/>',
+  apt:'<rect x="6" y="3" width="12" height="18" rx="1"/><path d="M10 7h.01M14 7h.01M10 11h.01M14 11h.01M10 15h4v6h-4z"/>',
+  street:'<path d="M12 2l-2 20M6 22L9 2M18 22L15 2"/>',
+  lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon:'<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>',
+  helmet:'<path d="M3 15a9 9 0 0 1 18 0v2H3z"/><path d="M8 8l2 7M14 7l1 8"/>',
+  light:'<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
+  none:'<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+  check:'<path d="M20 6L9 17l-5-5"/>',
+};
+const svg = (k, w=24) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[k]}</svg>`;
+
+/* ---------------------------------------------------------- preguntas */
+const PASOS = [
+  {id:'uso', t:'¿Para qué la vas a usar principalmente?', s:'Elegí lo que más se parezca. Después afinamos.', ops:[
+    ['ciudad','city','Ir al trabajo o a estudiar','Moverme por la ciudad todos los días'],
+    ['combinar','train','Combinarla con tren, subte o auto','Necesito subirla o guardarla fácil'],
+    ['paseo','leaf','Pasear y salir el finde','Plazas, costanera, bicisendas'],
+    ['deporte','speed','Entrenar en asfalto','Sumar kilómetros y velocidad'],
+    ['tierra','mount','Tierra, caminos y montaña','Salir de lo asfaltado'],
+    ['carga','box','Llevar carga o a los chicos','Compras, mercadería, sillita'],
+  ]},
+  {id:'distancia', t:'¿Cuánto suele medir cada trayecto?', s:'Solo ida. Una idea aproximada alcanza.', ops:[
+    ['corta','short','Menos de 5 km','Unos 15–20 minutos'],
+    ['media','mid','Entre 5 y 15 km','Entre 20 y 50 minutos'],
+    ['larga','long','Más de 15 km','Trayectos largos o salidas de varias horas'],
+  ], one:true},
+  {id:'terreno', t:'¿Cómo es el recorrido?', s:'Pensá en lo que más vas a hacer.', ops:[
+    ['plano','flat','Mayormente llano','Asfalto, bicisendas, poca pendiente'],
+    ['subidas','hill','Con subidas','Puentes, lomas o zonas con pendiente'],
+    ['tierra','dirt','Con tramos de tierra','Ripio, caminos rurales, senderos'],
+  ], one:true},
+  {id:'electrica', t:'¿Te interesa una bici eléctrica?', s:'Tienen un motor que te ayuda cuando pedaleás: llegás sin transpirar y las subidas desaparecen.', ops:[
+    ['abierto','help','No sé, recomendame','Si me conviene, mostrámela'],
+    ['si','bolt','Sí, quiero eléctrica','Quiero la ayuda del motor'],
+    ['no','leg','No, prefiero pedalear','Una bici convencional'],
+  ], one:true},
+  {id:'espacio', t:'¿Dónde la vas a guardar?', s:'Nos ayuda a saber si te conviene una plegable.', ops:[
+    ['tengo','home','Tengo lugar','Garage, patio, cochera o baulera'],
+    ['poco','apt','Tengo poco espacio','Departamento, ascensor chico, oficina'],
+  ], one:true},
+  {id:'estaciona', t:'¿La vas a dejar estacionada en la calle?', s:'Define qué candado necesitás de verdad.', ops:[
+    ['calle','street','Sí, en la calle','Varias horas, atada a un poste o bicicletero'],
+    ['adentro','lock','No, la guardo adentro','Estacionamiento cerrado, oficina o casa'],
+  ], one:true},
+  {id:'horario', t:'¿Vas a andar de noche?', s:'Para elegir las luces justas.', ops:[
+    ['dia','sun','Casi siempre de día','Algún atardecer como mucho'],
+    ['noche','moon','Sí, también de noche','Vuelvo tarde o salgo temprano'],
+  ], one:true},
+  {id:'altura', t:'¿Cuánto medís?', s:'Con tu altura elegimos el talle de cuadro correcto y te mostramos solo lo que te queda bien.', tipo:'altura'},
+  {id:'presupuesto', t:'¿Cuánto querés invertir en total?', s:'Bici + accesorios. Te armamos el combo dentro de ese número.', tipo:'presupuesto'},
+  {id:'ya_tengo', t:'¿Ya tenés alguno de estos?', s:'Así no te sumamos al combo algo que ya tenés.', tipo:'multi', ops:[
+    ['casco','helmet','Casco',''],
+    ['candado','lock','Candado',''],
+    ['luces','light','Luces',''],
+  ]},
+];
+const PRESUPUESTOS = [
+  [800000,'Hasta $800.000'],[1200000,'Hasta $1.200.000'],[1800000,'Hasta $1.800.000'],
+  [2800000,'Hasta $2.800.000'],[4000000,'Hasta $4.000.000'],[0,'No tengo un tope definido'],
+];
+const TALLES = {XXS:[135,152],XS:[148,163],S:[158,172],M:[168,181],L:[177,190],XL:[186,198],XXL:[194,210]};
+
+let R = {};          // respuestas
+let paso = -1;       // -1 = portada; PASOS.length = resultados
+let cfg = {whatsapp:'', chat_ia:false, store_url:''};
+let data = null;     // resultado del servidor
+let chat = [];
+
+fetch('/api/asesor/config').then(r => r.json()).then(c => { cfg = c; if (paso === PASOS.length) render(); }).catch(()=>{});
+
+function pasosVisibles(){
+  // Si la combina con transporte ya sabemos que busca poco espacio.
+  return PASOS.filter(p => !(p.id === 'espacio' && R.uso === 'combinar'));
+}
+function guardarHash(){
+  const h = 'r=' + encodeURIComponent(JSON.stringify(R)) + '&p=' + paso;
+  if (location.hash.slice(1) !== h) history.pushState(null, '', '#' + h);
+}
+function leerHash(){
+  const q = new URLSearchParams(location.hash.slice(1));
+  try { R = JSON.parse(q.get('r') || '{}') || {}; } catch { R = {}; }
+  paso = q.has('p') ? parseInt(q.get('p')) : -1;
+}
+window.addEventListener('popstate', () => { leerHash(); render(); });
+
+function ir(n){ paso = n; guardarHash(); render(); window.scrollTo({top:0, behavior:'smooth'}); }
+function siguiente(){
+  const vis = pasosVisibles();
+  const i = vis.findIndex(p => p.id === PASOS[paso]?.id);
+  if (R.uso === 'combinar') R.espacio = 'poco';
+  if (i + 1 >= vis.length) return ir(PASOS.length);
+  ir(PASOS.indexOf(vis[i + 1]));
+}
+$('#back').onclick = () => history.back();
+
+function progreso(){
+  const vis = pasosVisibles();
+  const i = paso < 0 ? 0 : paso >= PASOS.length ? vis.length : vis.findIndex(p => p.id === PASOS[paso].id);
+  $('#bar').style.width = (paso < 0 ? 0 : Math.round(i / vis.length * 100)) + '%';
+  $('#stepcount').textContent = (paso >= 0 && paso < PASOS.length) ? `${i + 1} de ${vis.length}` : '';
+  $('#back').classList.toggle('show', paso >= 0);
+}
+
+/* ---------------------------------------------------------- render */
+function render(){
+  progreso();
+  if (paso < 0) return portada();
+  if (paso >= PASOS.length) return resultados();
+  const p = PASOS[paso];
+  if (p.tipo === 'altura') return pasoAltura(p);
+  if (p.tipo === 'presupuesto') return pasoPresupuesto(p);
+  if (p.tipo === 'multi') return pasoMulti(p);
+  pasoOpciones(p);
+}
+
+function portada(){
+  app.innerHTML = `
+  <section class="hero step">
+    <div class="eyebrow">${svg('help',16)} Asesor personalizado · 1 minuto</div>
+    <h1>Encontrá la bici justa para vos, sin marearte.</h1>
+    <p>Contanos cómo te vas a mover y te recomendamos 2 o 3 opciones <b>en tu talle, con stock</b> y con los accesorios que realmente necesitás, dentro de tu presupuesto.</p>
+    <button class="cta accent" id="go">Empezar ${svg('check',18).replace(I.check,'<path d="M5 12h14M13 6l6 6-6 6"/>')}</button>
+    <div class="perks">
+      <div class="perk"><b>Tu talle exacto</b><span>Te indicamos qué cuadro te queda según tu altura.</span></div>
+      <div class="perk"><b>Combos armados</b><span>Casco, candado y luces elegidos para tu uso.</span></div>
+      <div class="perk"><b>Dudas resueltas</b><span>Preguntale lo que quieras a nuestro asesor.</span></div>
+    </div>
+  </section>`;
+  $('#go').onclick = () => ir(0);
+}
+
+function cabecera(p){
+  return `<h2>${p.t}</h2><p class="sub">${p.s}</p>`;
+}
+
+function pasoOpciones(p){
+  app.innerHTML = `<section class="step">${cabecera(p)}
+    <div class="opts ${p.one ? 'one' : ''}">
+      ${p.ops.map(([v, ic, b, s]) => `
+        <button class="opt ${R[p.id] === v ? 'sel' : ''}" data-v="${v}">
+          <div class="ic">${svg(ic)}</div>
+          <div><b>${b}</b><span>${s}</span></div>
+        </button>`).join('')}
+    </div></section>`;
+  app.querySelectorAll('.opt').forEach(el => el.onclick = () => {
+    R[p.id] = el.dataset.v;
+    app.querySelectorAll('.opt').forEach(o => o.classList.toggle('sel', o === el));
+    setTimeout(siguiente, 180);   // un instante para ver la selección
+  });
+}
+
+function talleDe(h){
+  return Object.entries(TALLES).filter(([, [lo, hi]]) => lo <= h && h <= hi)
+    .sort((a, b) => Math.abs((a[1][0] + a[1][1]) / 2 - h) - Math.abs((b[1][0] + b[1][1]) / 2 - h))
+    .map(([t]) => t);
+}
+function pasoAltura(p){
+  const h = R.altura || 170;
+  app.innerHTML = `<section class="step">${cabecera(p)}
+    <div class="altura-box">
+      <div class="altura-val"><span id="hv">${h}</span><small>cm</small></div>
+      <div class="altura-talle" id="ht"></div>
+      <input type="range" id="hr" min="130" max="210" step="1" value="${h}" aria-label="Altura en centímetros">
+      <div class="steppers"><button id="hm" aria-label="Restar un centímetro">−</button><button id="hp" aria-label="Sumar un centímetro">+</button></div>
+    </div>
+    <div class="hint">¿Justo entre dos talles? Te mostramos los dos: el más chico es más ágil y cómodo para ciudad; el más grande, más estable en distancias largas.</div>
+    <div class="foot"><div class="wrap"><button class="cta block" id="nx">Continuar</button></div></div>
+  </section>`;
+  const upd = v => {
+    v = Math.max(130, Math.min(210, v)); R.altura = v;
+    $('#hv').textContent = v; $('#hr').value = v;
+    const t = talleDe(v);
+    $('#ht').innerHTML = v < 145 ? 'Te vamos a sugerir bicis infantiles o juveniles.'
+      : t.length ? `Talle de cuadro sugerido: <b>${t.join(' o ')}</b>` : '';
+  };
+  $('#hr').oninput = e => upd(+e.target.value);
+  $('#hm').onclick = () => upd(R.altura - 1);
+  $('#hp').onclick = () => upd(R.altura + 1);
+  $('#nx').onclick = siguiente;
+  upd(h);
+}
+
+function pasoPresupuesto(p){
+  const actual = R.presupuesto;
+  const esPreset = actual === 0 || PRESUPUESTOS.some(([v]) => v === actual);
+  app.innerHTML = `<section class="step">${cabecera(p)}
+    <div class="opts">
+      ${PRESUPUESTOS.map(([v, l]) => `
+        <button class="opt ${actual === v && actual !== undefined ? 'sel' : ''}" data-v="${v}">
+          <div><b>${l}</b></div>
+        </button>`).join('')}
+    </div>
+    <p style="margin:22px 0 0;font-size:14px;color:var(--muted)">¿Otro monto? Escribilo:</p>
+    <div class="money"><span>$</span><input id="pm" inputmode="numeric" placeholder="Ej: 1.500.000" value="${actual && !esPreset ? actual.toLocaleString('es-AR') : ''}"></div>
+    <div class="foot"><div class="wrap"><button class="cta block" id="nx" ${actual === undefined ? 'disabled' : ''}>Continuar</button></div></div>
+  </section>`;
+  app.querySelectorAll('.opt').forEach(el => el.onclick = () => {
+    R.presupuesto = +el.dataset.v; $('#pm').value = '';
+    app.querySelectorAll('.opt').forEach(o => o.classList.toggle('sel', o === el));
+    setTimeout(siguiente, 180);
+  });
+  $('#pm').oninput = e => {
+    const n = parseInt(e.target.value.replace(/\D/g, '')) || 0;
+    e.target.value = n ? n.toLocaleString('es-AR') : '';
+    app.querySelectorAll('.opt').forEach(o => o.classList.remove('sel'));
+    R.presupuesto = n || undefined;
+    $('#nx').disabled = !n;
+  };
+  $('#pm').onkeydown = e => { if (e.key === 'Enter' && R.presupuesto) siguiente(); };
+  $('#nx').onclick = siguiente;
+}
+
+function pasoMulti(p){
+  const sel = new Set(R[p.id] || []);
+  app.innerHTML = `<section class="step">${cabecera(p)}
+    <div class="opts one">
+      ${p.ops.map(([v, ic, b]) => `
+        <button class="opt ${sel.has(v) ? 'sel' : ''}" data-v="${v}" aria-pressed="${sel.has(v)}">
+          <div class="ic">${svg(ic)}</div><div style="align-self:center"><b>${b}</b></div>
+          <div class="chk">${svg('check')}</div>
+        </button>`).join('')}
+    </div>
+    <div class="foot"><div class="wrap"><button class="cta block accent" id="nx"></button></div></div>
+  </section>`;
+  const txt = () => $('#nx').textContent = sel.size ? 'Ver mis recomendaciones' : 'No tengo ninguno · Ver recomendaciones';
+  app.querySelectorAll('.opt').forEach(el => el.onclick = () => {
+    const v = el.dataset.v;
+    sel.has(v) ? sel.delete(v) : sel.add(v);
+    el.classList.toggle('sel'); el.setAttribute('aria-pressed', sel.has(v));
+    R[p.id] = [...sel]; txt();
+  });
+  $('#nx').onclick = () => { R[p.id] = [...sel]; siguiente(); };
+  txt();
+}
+
+/* ---------------------------------------------------------- resultados */
+let pedidoEn = null;
+async function resultados(){
+  const clave = JSON.stringify(R);
+  if (!data || pedidoEn !== clave) {
+    pedidoEn = clave; data = null; chat = [];
+    const frases = ['Leyendo tus respuestas…', 'Buscando bicis en tu talle con stock…', 'Armando los combos dentro de tu presupuesto…'];
+    app.innerHTML = `<section class="loading"><div class="wheel"></div><h2>Preparando tu recomendación</h2><p id="lf">${frases[0]}</p></section>`;
+    let k = 0; const iv = setInterval(() => { const el = $('#lf'); if (el) el.textContent = frases[++k % frases.length]; }, 1400);
+    try {
+      const r = await fetch('/api/asesor/recomendar', {method:'POST', headers:{'Content-Type':'application/json'}, body: clave});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Error');
+      data = d;
+    } catch (e) {
+      clearInterval(iv);
+      app.innerHTML = `<div class="empty" style="margin-top:40px"><h3>No pudimos cargar las recomendaciones</h3><p>${esc(e.message)}</p><button class="cta" onclick="pedidoEn=null;render()">Reintentar</button></div>`;
+      return;
+    }
+    clearInterval(iv);
+    if (pedidoEn !== clave) return;
+  }
+  pintarResultados();
+}
+
+const CHIP = {
+  'electrica:abierto':'Eléctrica: si conviene', 'electrica:si':'Eléctrica', 'electrica:no':'Sin motor',
+  'espacio:tengo':'Tengo lugar para guardarla', 'espacio:poco':'Poco espacio',
+  'estaciona:calle':'La dejo en la calle', 'estaciona:adentro':'La guardo adentro',
+  'horario:dia':'Ando de día', 'horario:noche':'Ando de noche',
+};
+function chipsRespuestas(){
+  const nom = {};
+  PASOS.forEach(p => (p.ops || []).forEach(([v,, b]) => nom[p.id + ':' + v] = b));
+  const out = [];
+  pasosVisibles().forEach(p => {
+    let t;
+    if (p.id === 'altura') t = R.altura ? R.altura + ' cm' : null;
+    else if (p.id === 'presupuesto') t = R.presupuesto ? 'Hasta ' + fmt(R.presupuesto) : 'Sin tope';
+    else if (p.id === 'ya_tengo') t = (R.ya_tengo || []).length ? 'Ya tengo: ' + R.ya_tengo.join(', ') : null;
+    else t = CHIP[p.id + ':' + R[p.id]] || nom[p.id + ':' + R[p.id]];
+    if (t) out.push(`<button class="chip" data-p="${PASOS.indexOf(p)}">${esc(t)} ${svg('check',12).replace(I.check,'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>')}</button>`);
+  });
+  return out.join('');
+}
+
+function pintarResultados(){
+  const res = data.resultados || [];
+  const presupuesto = R.presupuesto || 0;
+  app.innerHTML = `
+  <section class="res-head step" style="padding-bottom:0">
+    <h1>${res.length ? (res.length === 1 ? 'Esta es la bici para vos' : `Estas son tus ${res.length} mejores opciones`) : 'Estamos cerca'}</h1>
+    <p>${esc(data.resumen)}</p>
+    <div class="chips">${chipsRespuestas()}</div>
+  </section>
+  ${(data.avisos || []).map(a => `<div class="notice">${esc(a.texto)} ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${a.tipo === 'ninos' ? 'Ver opciones infantiles' : 'Ver usados seleccionados'} →</a>` : ''}</div>`).join('')}
+  <div id="bikes">${res.length ? res.map((b, i) => tarjeta(b, i, presupuesto)).join('') : vacio()}</div>
+  ${chatHTML(res)}
+  ${waHTML(res)}
+  <button class="restart" id="rs">Empezar de nuevo</button>`;
+
+  app.querySelectorAll('.chip').forEach(c => c.onclick = () => ir(+c.dataset.p));
+  app.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+    const card = t.closest('.bike');
+    card.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t));
+    card.querySelectorAll('.combo').forEach(x => x.classList.toggle('hidden', x.dataset.c !== t.dataset.c));
+  });
+  app.querySelectorAll('.combo-toggle').forEach(t => t.onclick = () => {
+    t.nextElementSibling.classList.remove('hidden'); t.remove();
+  });
+  $('#rs').onclick = () => { R = {}; data = null; ir(-1); };
+  bindChat(res);
+}
+
+function vacio(){
+  return `<div class="empty"><h3>No encontramos una bici con stock que cumpla todo</h3>
+    <p>Probá ajustando el presupuesto o si te interesa una eléctrica. ${cfg.whatsapp ? 'O escribinos y te conseguimos la tuya.' : ''}</p>
+    <button class="cta" onclick="ir(${PASOS.findIndex(p => p.id === 'presupuesto')})">Cambiar presupuesto</button></div>`;
+}
+
+function precioHTML(p, lista){
+  const off = lista > p ? Math.round((1 - p / lista) * 100) : 0;
+  return `<div class="price"><b>${fmt(p)}</b>${off ? `<s>${fmt(lista)}</s><span class="off">${off}% OFF</span>` : ''}</div>`;
+}
+
+function tarjeta(b, i, presupuesto){
+  const combos = b.combos || [];
+  const combo0 = combos.find(c => c.nombre === 'Esencial');
+  let tag = '';
+  if (presupuesto) {
+    tag = b.excede
+      ? `<span class="budget-tag over">Se pasa ${fmt(b.excede)}${combo0 ? ' con el combo esencial' : ''}</span>`
+      : `<span class="budget-tag ok">${svg('check',14)}&nbsp;Entra en tu presupuesto${combo0 ? ' con el combo esencial' : ''}</span>`;
+  }
+  return `
+  <article class="bike ${b.destacada ? 'top-pick' : ''}">
+    ${b.destacada ? `<div class="ribbon">${svg('check',16)} Nuestra recomendación para vos</div>` : ''}
+    <div class="bike-main">
+      <a class="bike-img" href="${esc(b.url)}" target="_blank" rel="noopener">${b.imagen ? `<img src="${esc(b.imagen)}" alt="${esc(b.nombre)}" loading="lazy">` : ''}</a>
+      <div class="bike-info">
+        <div class="bike-type">Bici ${esc(b.tipo_texto)}</div>
+        <h3>${esc(b.nombre)}</h3>
+        <div class="bike-brand">${esc(b.marca)}</div>
+        ${precioHTML(b.precio, b.precio_lista)}
+        ${tag}
+        <div class="facts">
+          ${b.talles.length ? `<span class="fact">Tu talle: <b>${esc(b.talles.join(' / '))}</b></span>` : (b.talle_unico_regulable ? `<span class="fact"><b>Talle único</b> regulable</span>` : `<span class="fact"><b>Talle único</b></span>`)}
+          ${b.colores.length ? `<span class="fact">Colores en stock: <b>${esc(b.colores.slice(0,4).join(', '))}${b.colores.length > 4 ? '…' : ''}</b></span>` : ''}
+        </div>
+        <ul class="why">${b.motivos.map(m => `<li>${svg('check',18)}<span>${esc(m)}</span></li>`).join('')}</ul>
+        <a class="cta ghost block" href="${esc(b.url)}" target="_blank" rel="noopener">Ver la bici en la tienda</a>
+      </div>
+    </div>
+    ${combos.length && !b.destacada ? `
+    <button class="combo-toggle" aria-expanded="false"><span>Ver el combo armado para esta bici, desde <b>${fmt(combos[0].total)}</b></span> ${svg('check',16).replace(I.check,'<path d="M6 9l6 6 6-6"/>')}</button>` : ''}
+    ${combos.length ? `
+    <div class="combos ${b.destacada ? '' : 'hidden'}">
+      <h4>Tu combo listo para salir</h4>
+      <p class="sub2">Elegimos cada accesorio según cómo vas a usar la bici.</p>
+      ${combos.length > 1 ? `<div class="tabs">${combos.map((c, k) => `<button class="tab ${k ? '' : 'on'}" data-c="${k}">${esc(c.nombre)}</button>`).join('')}</div>` : ''}
+      ${combos.map((c, k) => `
+      <div class="combo ${k ? 'hidden' : ''}" data-c="${k}">
+        <p class="combo-desc">${esc(c.descripcion)}</p>
+        <div class="items">
+          <a class="item" href="${esc(b.url)}" target="_blank" rel="noopener">
+            <div class="th">${b.imagen ? `<img src="${esc(b.imagen)}" alt="" loading="lazy">` : ''}</div>
+            <div><div class="rol">Bicicleta</div><div class="nm">${esc(b.nombre)}</div>${b.talles.length ? `<div class="pq">Talle ${esc(b.talles[0])}</div>` : ''}</div>
+            <div class="pr">${fmt(b.precio)}</div>
+          </a>
+          ${c.items.map(it => `
+          <a class="item" href="${esc(it.url)}" target="_blank" rel="noopener">
+            <div class="th">${it.imagen ? `<img src="${esc(it.imagen)}" alt="" loading="lazy">` : ''}</div>
+            <div><div class="rol">${esc(ROL[it.rol] || it.rol)}</div><div class="nm">${esc(it.nombre)}</div><div class="pq">${esc(it.por_que)}</div></div>
+            <div class="pr">${it.precio_lista > it.precio ? `<s>${fmt(it.precio_lista)}</s>` : ''}${fmt(it.precio)}</div>
+          </a>`).join('')}
+        </div>
+        <div class="total"><div><small>Total del combo ${esc(c.nombre.toLowerCase())}</small>Bici + ${c.items.length} accesorio${c.items.length === 1 ? '' : 's'}</div><b>${fmt(c.total)}</b></div>
+      </div>`).join('')}
+      <div class="actions">
+        <a class="cta accent" href="${esc(b.url)}" target="_blank" rel="noopener">Comprar esta bici</a>
+        ${cfg.whatsapp ? `<a class="cta ghost" href="${waLink(b)}" target="_blank" rel="noopener">Reservar el combo por WhatsApp</a>` : ''}
+      </div>
+    </div>` : ''}
+  </article>`;
+}
+const ROL = {casco:'Casco', candado:'Candado', luces:'Luces', inflador:'Inflador', portapaquetes:'Portapaquetes', canasto:'Bolso / canasto', caramanola:'Hidratación', guardabarros:'Guardabarros'};
+
+function waLink(b){
+  let t = `Hola! Usé el asesor de la web. ${data.resumen}`;
+  if (b) {
+    const c = (b.combos || [])[0];
+    t += `\n\nMe interesa la ${b.nombre}${b.talles.length ? ' talle ' + b.talles[0] : ''}`;
+    if (c) t += ` con el combo ${c.nombre.toLowerCase()} (${c.items.map(i => i.nombre).join(', ')}) — total ${fmt(c.total)}`;
+    t += '.';
+  }
+  return `https://wa.me/${cfg.whatsapp.replace(/\D/g,'')}?text=${encodeURIComponent(t)}`;
+}
+function waHTML(res){
+  if (!cfg.whatsapp) return '';
+  return `<a class="wa" href="${waLink(res[0])}" target="_blank" rel="noopener">
+    <div class="wa-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20.5 3.5A11 11 0 0 0 3.2 17.3L2 22l4.8-1.2A11 11 0 1 0 20.5 3.5zM12 20a8 8 0 0 1-4.3-1.2l-.3-.2-2.8.7.7-2.7-.2-.3A8 8 0 1 1 12 20zm4.4-6c-.2-.1-1.4-.7-1.7-.8-.2-.1-.4-.1-.5.1l-.8 1c-.1.2-.3.2-.5.1a6.6 6.6 0 0 1-3.3-2.9c-.2-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.6.3 2.7 2.7 0 0 0-.9 2c0 1.2.9 2.4 1 2.5.1.2 1.7 2.6 4.2 3.7 1.6.7 2.2.7 3 .6.5-.1 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1l-.5-.5z"/></svg></div>
+    <div><b>¿Preferís que te lo confirme una persona?</b><span>Te mandamos tu recomendación por WhatsApp, ya con todo cargado.</span></div>
+  </a>`;
+}
+
+/* ---------------------------------------------------------- chat */
+function chatHTML(res){
+  if (!cfg.chat_ia || !res.length) return '';
+  const sug = ['¿Cuál de las opciones me conviene más?', '¿Qué mantenimiento necesita?', '¿Por qué ese talle?',
+               res.some(b => b.tipos.includes('electrica')) ? '¿Cuánta autonomía tiene la batería?' : '¿Qué cambios tiene?'];
+  return `<section class="chat">
+    <div class="chat-h"><h3>¿Te queda alguna duda?</h3><p>Preguntale a nuestro asesor sobre estas bicis y accesorios. Responde al instante.</p></div>
+    <div class="msgs" id="msgs">${chat.map(m => `<div class="msg ${m.role === 'user' ? 'u' : 'a'}">${esc(m.content)}</div>`).join('')}</div>
+    <div class="sugs" id="sugs">${chat.length ? '' : sug.map(s => `<button class="sug">${esc(s)}</button>`).join('')}</div>
+    <form class="ask" id="ask"><input id="q" placeholder="Escribí tu pregunta…" autocomplete="off" maxlength="500"><button id="qs">Enviar</button></form>
+  </section>`;
+}
+function bindChat(res){
+  const f = $('#ask'); if (!f) return;
+  const enviar = async q => {
+    q = q.trim(); if (!q) return;
+    $('#sugs').innerHTML = '';
+    chat.push({role:'user', content:q});
+    const box = $('#msgs');
+    box.insertAdjacentHTML('beforeend', `<div class="msg u">${esc(q)}</div><div class="msg a typing" id="ty">Escribiendo…</div>`);
+    box.scrollTop = box.scrollHeight;
+    $('#q').value = ''; $('#qs').disabled = true;
+    const perfil = data.resumen + '\n' + res.map((b, i) => `Opción ${i+1}: ${b.nombre} (${b.tipo_texto}) ${fmt(b.precio)}, talles para su altura: ${b.talles.join('/') || 'único'}. Combo esencial: ${(b.combos[0]?.items || []).map(x => `${x.nombre} ${fmt(x.precio)}`).join(', ')}.`).join('\n');
+    let txt;
+    try {
+      const r = await fetch('/api/asesor/preguntar', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({mensajes: chat, perfil, ids: res.flatMap(b => [b.id, ...(b.combos || []).flatMap(c => c.items.map(i => i.id))]).filter(Boolean)})});
+      const d = await r.json();
+      txt = d.respuesta || d.error || 'No pude responder ahora.';
+    } catch { txt = 'No pude responder ahora. Probá de nuevo en un momento.'; }
+    chat.push({role:'assistant', content:txt});
+    $('#ty').remove();
+    box.insertAdjacentHTML('beforeend', `<div class="msg a">${esc(txt)}</div>`);
+    box.scrollTop = box.scrollHeight;
+    $('#qs').disabled = false;
+  };
+  f.onsubmit = e => { e.preventDefault(); enviar($('#q').value); };
+  app.querySelectorAll('.sug').forEach(s => s.onclick = () => enviar(s.textContent));
+}
+
+leerHash();
+if (paso >= 0 && paso < PASOS.length && !R.uso && paso > 0) paso = 0;
+render();
+</script>
+</body>
+</html>
