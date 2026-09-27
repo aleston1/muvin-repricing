@@ -20,6 +20,7 @@ import time
 import requests
 
 from sync import TN_BASE, tn_headers, tn_nombre, html_a_texto
+import asesor_datos
 
 asesor_bp = Blueprint("asesor", __name__, url_prefix="/api/asesor")
 
@@ -51,6 +52,9 @@ CAT_ACCESORIOS = {
     "porta_celular": 37360471,
 }
 CAT_NINOS = 30153643
+# Vehículos que controla la planilla (además de CAT_BICIS): para el reporte.
+CAT_VEHICULOS_EXTRA = {"monopatin": 33843601, "moto": 33843631, "ninos": CAT_NINOS,
+                       "carga": 30153580, "dirt": 40259390}
 CAT_MOTO_CANDADOS = 35512464  # "Específicos de moto": nunca van en un combo de bici
 
 TIPO_TEXTO = {
@@ -147,12 +151,22 @@ def cargar_catalogo(forzar=False):
         crudos = dict(zip(todas, ex.map(lambda c: _fetch_categoria(store_id, token, c),
                                         todas.values())))
 
+    # Regla de Muvin: un vehículo sin TODOS sus datos obligatorios en la
+    # planilla de criterios no se ofrece (asesor_datos.faltantes).
+    try:
+        habilitados = set(asesor_datos.ofrecibles())
+    except Exception as e:
+        raise RuntimeError(f"No se pudo leer la planilla de criterios: {e}")
+
     bicis, accesorios = {}, {k: [] for k in CAT_ACCESORIOS}
     for clave, productos in crudos.items():
         grupo, nombre = clave.split(":")
         for p in productos:
             n = normalizar(p)
-            if not n["variantes"]:
+            # Sin stock, sin precio o sin foto: no se ofrece nunca.
+            if not n["variantes"] or not n["imagen"]:
+                continue
+            if grupo == "bici" and str(n["id"]) not in habilitados:
                 continue
             if grupo == "bici":
                 if CAT_NINOS in n["categorias"]:
@@ -558,10 +572,41 @@ def ruta_recomendar():
     return jsonify(recomendar(r, catalogo))
 
 
+def vehiculos_tn():
+    """Vehículos publicados de Tiendanube con su estado en la tienda, para el control."""
+    store_id, token = _tn_credenciales()
+    cats = list(CAT_BICIS.values()) + list(CAT_VEHICULOS_EXTRA.values())
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        lotes = list(ex.map(lambda c: _fetch_categoria(store_id, token, c), cats))
+    out = {}
+    for lote in lotes:
+        for p in lote:
+            n = normalizar(p)
+            if not n["variantes"]:
+                continue  # sin stock: no hace falta que esté completo hoy
+            out[str(n["id"])] = {"nombre": n["nombre"], "url": n["url"], "con_stock": True,
+                                 "con_foto": bool(n["imagen"]),
+                                 "precio": min(v["precio"] for v in n["variantes"])}
+    return out
+
+
+@asesor_bp.route("/control")
+def ruta_control():
+    """Qué vehículos se ofrecen, cuáles no y por qué (planilla + Tiendanube)."""
+    try:
+        stock = vehiculos_tn() if all(_tn_credenciales()) else None
+        rep_ = asesor_datos.reporte(stock, forzar=request.args.get("forzar") == "1")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    rep_["tn_consultado"] = stock is not None
+    return jsonify(rep_)
+
+
 @asesor_bp.route("/refrescar", methods=["POST"])
 def ruta_refrescar():
     """Fuerza a releer el catálogo (p. ej. tras cambiar precios)."""
     try:
+        asesor_datos.cargar(forzar=True)
         data = cargar_catalogo(forzar=True)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

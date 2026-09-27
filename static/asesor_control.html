@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control del asesor — Muvin</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f0;color:#1a1a1a;font-size:14px}
+  header{background:#fff;border-bottom:1px solid #e5e5e0;padding:14px 24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:16px;font-weight:600}
+  header p{font-size:12px;color:#888}
+  .sp{flex:1}
+  .btn{padding:8px 14px;border-radius:6px;border:1px solid #1a1a1a;background:#1a1a1a;color:#fff;cursor:pointer;font-size:13px;font-weight:500}
+  .main{padding:20px 24px;max-width:1100px;margin:0 auto}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+  @media(max-width:640px){.stats{grid-template-columns:1fr}.main{padding:16px}}
+  .stat{background:#fff;border:1px solid #e5e5e0;border-radius:10px;padding:14px 16px}
+  .stat b{display:block;font-size:28px}
+  .stat span{font-size:12px;color:#888}
+  .ok b{color:#1e7e34}.no b{color:#c0392b}.miss b{color:#856404}
+  h2{font-size:13px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:22px 0 10px}
+  .card{background:#fff;border:1px solid #e5e5e0;border-radius:10px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #f0f0ec;vertical-align:top}
+  th{font-size:11px;color:#888;font-weight:600;background:#fafaf7}
+  .tag{display:inline-block;background:#fce8e8;color:#c0392b;border-radius:20px;padding:2px 8px;font-size:11px;margin:1px 2px 1px 0}
+  .tag.tn{background:#fff3cd;color:#856404}
+  .muted{color:#888}
+  .filter{margin:6px 0 10px;display:flex;gap:6px;flex-wrap:wrap}
+  .chip{border:1px solid #ddd;background:#fff;border-radius:20px;padding:4px 10px;font-size:12px;cursor:pointer}
+  .chip.on{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+  .err{background:#fce8e8;color:#c0392b;padding:12px 16px;border-radius:8px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Control del asesor</h1><p id="sub">Regla: si a un producto le falta UN dato obligatorio, no se ofrece.</p></div>
+  <div class="sp"></div>
+  <button class="btn" id="re">Releer planilla y stock</button>
+</header>
+<main class="main" id="app"><p class="muted">Cargando…</p></main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let data = null, filtro = null;
+
+async function cargar(forzar){
+  $('#app').innerHTML = '<p class="muted">Cargando…</p>';
+  try {
+    const r = await fetch('/api/asesor/control' + (forzar ? '?forzar=1' : ''));
+    data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Error');
+    pintar();
+  } catch (e) { $('#app').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+function pintar(){
+  const d = data;
+  const motivos = {};
+  d.no_ofrecidos.forEach(p => p.motivos.forEach(m => motivos[m] = (motivos[m] || 0) + 1));
+  const lista = filtro ? d.no_ofrecidos.filter(p => p.motivos.includes(filtro)) : d.no_ofrecidos;
+  $('#sub').textContent = `Planilla: ${d.origen} · leída ${new Date(d.leido * 1000).toLocaleString('es-AR')}` +
+    (d.tn_consultado ? ' · stock de Tiendanube en vivo' : ' · sin conexión a Tiendanube');
+  $('#app').innerHTML = `
+    <div class="stats">
+      <div class="stat ok"><b>${d.ofrecidos.length}</b><span>se ofrecen</span></div>
+      <div class="stat no"><b>${d.no_ofrecidos.length}</b><span>NO se ofrecen (falta algún dato)</span></div>
+      <div class="stat miss"><b>${d.sin_planilla.length}</b><span>con stock pero sin fila en la planilla</span></div>
+    </div>
+    <h2>No se ofrecen</h2>
+    <div class="filter">
+      <button class="chip ${filtro ? '' : 'on'}" data-m="">Todos (${d.no_ofrecidos.length})</button>
+      ${Object.entries(motivos).sort((a, b) => b[1] - a[1]).map(([m, n]) =>
+        `<button class="chip ${filtro === m ? 'on' : ''}" data-m="${esc(m)}">${esc(m)} (${n})</button>`).join('')}
+    </div>
+    <div class="card"><table>
+      <tr><th>Producto</th><th>Tipo</th><th>Qué falta</th></tr>
+      ${lista.map(p => `<tr><td>${esc(p.nombre)} <span class="muted">#${esc(p.id)}</span></td><td>${esc(p.tipo)}</td>
+        <td>${p.motivos.map(m => `<span class="tag ${/tiendanube/i.test(m) ? 'tn' : ''}">${esc(m)}</span>`).join('')}</td></tr>`).join('')
+        || '<tr><td colspan="3" class="muted">Nada pendiente.</td></tr>'}
+    </table></div>
+    ${d.sin_planilla.length ? `
+    <h2>Con stock en Tiendanube pero sin fila en la planilla</h2>
+    <div class="card"><table>
+      <tr><th>Producto</th><th>ID para la planilla</th></tr>
+      ${d.sin_planilla.map(p => `<tr><td><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.nombre)}</a></td><td>${esc(p.id)}</td></tr>`).join('')}
+    </table></div>` : ''}
+    ${(d.sin_stock || []).length ? `
+    <h2>Sin stock hoy (${d.sin_stock.length}) — lo que les falta para cuando vuelva a entrar</h2>
+    <div class="card"><table>
+      <tr><th>Producto</th><th>Tipo</th><th>Qué falta</th></tr>
+      ${d.sin_stock.map(p => `<tr><td>${esc(p.nombre)} <span class="muted">#${esc(p.id)}</span></td><td>${esc(p.tipo)}</td>
+        <td>${p.motivos.map(m => `<span class="tag">${esc(m)}</span>`).join('') || '<span class="muted">Completo</span>'}</td></tr>`).join('')}
+    </table></div>` : ''}
+    <h2>Se ofrecen</h2>
+    <div class="card"><table>
+      <tr><th>Producto</th><th>Tipo</th></tr>
+      ${d.ofrecidos.map(p => `<tr><td>${esc(p.nombre)}</td><td>${esc(p.tipo)}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">Ninguno todavía.</td></tr>'}
+    </table></div>`;
+  document.querySelectorAll('.chip').forEach(c => c.onclick = () => { filtro = c.dataset.m || null; pintar(); });
+}
+$('#re').onclick = () => cargar(true);
+cargar(false);
+</script>
+</body>
+</html>

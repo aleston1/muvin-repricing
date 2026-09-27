@@ -26,6 +26,8 @@ txt = [
  ("Precio y stock NO se cargan acá: salen en vivo de Tiendanube. Un producto solo se recomienda si tiene stock en la variante (talle/color) que le sirve al cliente.", False),
  ("", False),
  ("Pestañas", True),
+ ("• Control: cuántos productos se ofrecen y cuántos no por falta de datos.", False),
+ ("• Datos obligatorios: la regla. Si a un producto le falta UN dato obligatorio, NO se ofrece.", False),
  ("• Etapas: las preguntas que hace el asesor, en orden, con sus opciones y qué criterio alimenta cada una.", False),
  ("• Criterios: el diccionario de cada criterio (qué significa, si es filtro o suma puntaje, valores posibles).", False),
  ("• Productos: una fila por producto de Tiendanube (vehículos). Acá se marca bajo qué criterios se recomienda cada uno.", False),
@@ -106,7 +108,7 @@ crit = [
  ("Plegable", "Si se pliega para guardar o subir al transporte.", "Filtro", "Sí / No / Parcial", "6"),
  ("Peso (kg)", "Peso del vehículo. Clave para escaleras.", "Filtro", "Número", "6"),
  ("Carga máx (kg)", "Peso máximo soportado (persona + carga).", "Filtro", "Número", "10"),
- ("Altura mín / máx (cm)", "Rango de altura del usuario. Si tiene talles, el rango lo da la pestaña Talles.", "Filtro", "Número", "9"),
+ ("Altura (solapa 'Altura por modelo')", "Rango de altura del usuario por talle. Las bicis de talle único tienen una fila 'Único'. La altura vive SOLO en esa solapa.", "Filtro", "Número", "9"),
  ("Talles por variante", "Sí = el talle está en las variantes de TN y se usa la pestaña Talles.", "Filtro", "Sí / No", "9"),
  ("Subida máx (%)", "Pendiente máxima (monopatines y motos).", "Puntaje", "Número", "3"),
  ("Nivel", "Posicionamiento: ayuda a ordenar dentro del presupuesto.", "Puntaje", "Entrada / Medio / Alto", "11"),
@@ -120,22 +122,25 @@ for row in ws.iter_rows(min_row=2):
 
 # ------------------------------------------------------------ 4. Productos
 ws = wb.create_sheet("Productos")
-cols = ["ID Tiendanube", "Nombre", "Categoría en TN", "Tipo de vehículo", "Propulsión",
+cols = ["ID Tiendanube", "Nombre", "¿Se ofrece?", "Qué falta", "Categoría en TN", "Tipo de vehículo", "Propulsión",
         "Uso: diario", "Uso: paseo", "Uso: deporte / naturaleza", "Uso: llevar chicos", "Uso: llevar carga", "Uso: niños", "Acepta silla de niños", "Neumáticos con aire",
         "Terreno apto", "Autonomía (km)", "Velocidad máx (km/h)", "Requiere licencia/patente",
-        "Plegable", "Peso (kg)", "Carga máx (kg)", "Altura mín (cm)", "Altura máx (cm)", "Talles por variante",
+        "Plegable", "Peso (kg)", "Carga máx (kg)", "Talles por variante",
         "Subida máx (%)", "Nivel", "Prioridad", "Activo en asesor", "Argumento de venta", "Notas / revisar"]
-header(ws, cols, [13, 30, 20, 20, 18, 9, 9, 11, 11, 11, 9, 11, 11, 18, 11, 11, 12, 10, 9, 10, 10, 10, 10, 10, 10, 9, 10, 40, 44])
+header(ws, cols, [13, 30, 10, 34, 20, 20, 18, 9, 9, 11, 11, 11, 9, 11, 11, 18, 11, 11, 12, 10, 9, 10, 10, 10, 10, 9, 10, 40, 44])
 
 rows = []
+ALT_UNICO = {}   # altura de productos de talle único, va a la solapa 'Altura por modelo'
 def add(pid, nombre, cat, tipo, prop, usos, terreno, aut=None, vel=None, lic="No", pleg="No", peso=None, carga=None,
         amin=None, amax=None, talles="No", subida=None, nivel=None, activo="Sí", arg="", notas="", ficha=(), est=(),
         silla=None, aire="Sí"):
     if silla is None:
         silla = "Sí" if "chicos" in usos else ("Revisar" if prop == "Pedal" or prop.startswith("Asistida") else "No")
         if silla == "Revisar": est = tuple(est) + ("silla",)
-    rows.append(dict(v=[pid, nombre, cat, tipo, prop] + [("Sí" if u in usos else "No") for u in ("diario","paseo","deporte","chicos","carga","ninos")] + [silla, aire] +
-                    [terreno, aut, vel, lic, pleg, peso, carga, amin, amax, talles, subida, nivel, 0, activo, arg, notas],
+    if amin and amax:
+        ALT_UNICO[pid] = (amin, amax, "Estimado por rodado" if "amin" in est else "Completo")
+    rows.append(dict(v=[pid, nombre, None, None, cat, tipo, prop] + [("Sí" if u in usos else "No") for u in ("diario","paseo","deporte","chicos","carga","ninos")] + [silla, aire] +
+                    [terreno, aut, vel, lic, pleg, peso, carga, talles, subida, nivel, 0, activo, arg, notas],
                      ficha=set(ficha), est=set(est)))
 
 # Monopatines (datos de ficha)
@@ -197,8 +202,7 @@ conv([(260340429,"Link D8"),(260340659,"Node D8"),(260341040,"Link C8"),(2603410
       (260342182,"Link A7"),(349261704,"Hopper Mini"),(349261708,"Hopper XL"),(349261749,"Krabi V-brake"),(349261759,"Krabi Disk"),
       (349261760,"Lentus Mini"),(349261768,"GOA V-brake"),(349261771,"Easy Disk"),(349261778,"Easy Fat"),(349261789,"Easy 8"),
       (349261794,"Speed Disk"),(349261833,"Easy Fat Nexus"),(349261834,"Lentus 8")],
-     "Bicicletas > Plegables", "Bici plegable", {"diario","paseo"}, "Asfalto", pleg="Sí", talles="No", amin=150, amax=190,
-     notas="Completar peso (clave para escaleras) y rango de altura de ficha.")
+     "Bicicletas > Plegables", "Bici plegable", {"diario","paseo"}, "Asfalto", pleg="Sí", talles="No")
 conv([(283042882,"Nicasio (2023)"),(283050150,"Nicasio 1 (2025)"),(283064870,"Four Corners 1 Sword (2025)"),(297455735,"DSX 1 (2026)"),
       (297486793,"DSX 2 (2026)"),(345977305,"Nicasio+ Sword (650B)"),(349261732,"Wanderer"),(349261740,"The Lightning"),
       (350939845,"Nicasio 1 ST (caño bajo)"),(350940160,"Four Corners 1 Cues (2026)"),(359825099,"Esker 5.0")],
@@ -228,33 +232,54 @@ for pid, n in [(260342484,"Power"),(260342490,"Jumper"),(304920554,"Bayview Trai
         amin=rg[0] if rg else None, amax=rg[1] if rg else None, est=("usos","amin","amax") if rg else ("usos",),
         notas="" if rg else "Completar rodado / rango de altura.")
 
-KEY = {"aut":14,"vel":15,"lic":16,"pleg":17,"peso":18,"carga":19,"amin":20,"amax":21,"subida":23,"usos":(5,6,7,8,9,10),"silla":11,"aire":12,"terreno":13}
+KEY = {"aut":16,"vel":17,"lic":18,"pleg":19,"peso":20,"carga":21,"subida":23,"usos":(7,8,9,10,11,12),"silla":13,"aire":14,"terreno":15,"amin":None,"amax":None}
 for r in rows:
     ws.append(r["v"])
     ri = ws.max_row
     for k in r["ficha"]:
+        if KEY[k] is None: continue
         for ci in (KEY[k] if isinstance(KEY[k], tuple) else (KEY[k],)):
             ws.cell(ri, ci+1).fill = FICHA
     for k in r["est"]:
+        if KEY[k] is None: continue
         for ci in (KEY[k] if isinstance(KEY[k], tuple) else (KEY[k],)):
             ws.cell(ri, ci+1).fill = EST
+    A = "'Altura por modelo'"
+    conds = [
+        (f'F{ri}=""', "tipo"), (f'G{ri}=""', "propulsión"), (f'COUNTIF(H{ri}:M{ri},"Sí")=0', "uso"),
+        (f'OR(N{ri}="",N{ri}="Revisar")', "silla de niños"), (f'O{ri}=""', "neumáticos"), (f'P{ri}=""', "terreno"),
+        (f'AND(G{ri}<>"Pedal",Q{ri}="")', "autonomía"), (f'AND(G{ri}<>"Pedal",R{ri}="")', "velocidad"),
+        (f'OR(S{ri}="",S{ri}="Revisar")', "licencia"), (f'T{ri}=""', "plegable"), (f'U{ri}=""', "peso"),
+        (f'AND(G{ri}<>"Pedal",V{ri}="")', "carga máx"),
+        (f'AND(ISNUMBER(SEARCH("Bici",F{ri})),COUNTIF({A}!$A$2:$A$2000,A{ri})=0)', "altura"),
+        (f'COUNTIFS({A}!$A$2:$A$2000,A{ri},{A}!$E$2:$E$2000,"")+COUNTIFS({A}!$A$2:$A$2000,A{ri},{A}!$F$2:$F$2000,"")>0', "altura por talle"),
+        (f'AA{ri}<>"Sí"', "desactivado"),
+    ]
+    ws.cell(ri, 4).value = "=" + "&".join(f'IF({c},"{t}; ","")' for c, t in conds)
+    ws.cell(ri, 3).value = f'=IF(LEN(D{ri})=0,"SÍ","NO")'
+    ws.cell(ri, 3).alignment = Alignment(horizontal="center")
+    ws.cell(ri, 4).alignment = WR
     ws.cell(ri, 28).alignment = WR; ws.cell(ri, 29).alignment = WR
 ws.auto_filter.ref = f"A1:{ws.cell(1, len(cols)).column_letter}{ws.max_row}"
 n = ws.max_row
 def dv(formula, rng):
     d = DataValidation(type="list", formula1=formula, allow_blank=True); ws.add_data_validation(d); d.add(rng)
-dv("=Listas!$A$2:$A$20", f"D2:D{n+200}")
-dv("=Listas!$B$2:$B$6", f"E2:E{n+200}")
-dv('"Sí,No"', f"F2:K{n+200}")
-dv('"Sí,No,Revisar"', f"L2:L{n+200}")
-dv('"Sí,No"', f"M2:M{n+200}")
-dv("=Listas!$C$2:$C$6", f"N2:N{n+200}")
-dv('"Sí,No,Revisar"', f"Q2:Q{n+200}")
-dv('"Sí,No,Parcial"', f"R2:R{n+200}")
+dv("=Listas!$A$2:$A$30", f"F2:F{n+200}")
+dv("=Listas!$B$2:$B$6", f"G2:G{n+200}")
+dv('"Sí,No"', f"H2:M{n+200}")
+dv('"Sí,No,Revisar"', f"N2:N{n+200}")
+dv('"Sí,No"', f"O2:O{n+200}")
+dv("=Listas!$C$2:$C$6", f"P2:P{n+200}")
+dv('"Sí,No,Revisar"', f"S2:S{n+200}")
+dv('"Sí,No,Parcial"', f"T2:T{n+200}")
 dv('"Sí,No"', f"W2:W{n+200}")
 dv('"Entrada,Medio,Alto"', f"Y2:Y{n+200}")
 dv('"0,1,2,3"', f"Z2:Z{n+200}")
 dv('"Sí,No"', f"AA2:AA{n+200}")
+from openpyxl.formatting.rule import CellIsRule
+ws.conditional_formatting.add(f"C2:C{n+200}", CellIsRule(operator="equal", formula=['"SÍ"'], fill=PatternFill("solid", fgColor="C6EFCE"), font=Font(bold=True, color="006100")))
+ws.conditional_formatting.add(f"C2:C{n+200}", CellIsRule(operator="equal", formula=['"NO"'], fill=PatternFill("solid", fgColor="FFC7CE"), font=Font(bold=True, color="9C0006")))
+ws.freeze_panes = "E2"
 ws.cell(1,1).comment = Comment("ID del producto en Tiendanube (número en la URL del admin). Es la llave con la que el asesor cruza stock y precio en vivo.", "Asesor")
 
 # ------------------------------------------------------------ 5. Accesorios (combos)
@@ -460,6 +485,10 @@ for pid, n, marca, r in [(260342361,"2Fold 20","",(140,185)),(260344367,"2Fold 2
                          (263963220,"Quick Haul P9","Tern",(160,195)),(349261766,"E-Krabi","",(160,200)),(349261769,"E-GOA","",(150,190)),
                          (349261777,"E-Easy Fat","",(160,200))]:
     fila(pid, n, marca, "Único", r, FT, desc="Sí")
+def unico(pid, n, marca=""):
+    a = ALT_UNICO.get(pid)
+    if a: fila(pid, n, marca, "Único", a[:2], "Ficha del producto en TN" if a[2] == "Completo" else "Estimado por rodado (tabla genérica)", a[2])
+    else: fila(pid, n, marca, "Único")
 for pid, n in [(260345186,"Street 700c"),(349261743,"The Tentacle"),(260340429,"Link D8"),(260340659,"Node D8"),(260341040,"Link C8"),
                (260341051,"Node D7i"),(260341563,"Eclipse D16"),(260342182,"Link A7"),(349261704,"Hopper Mini"),(349261708,"Hopper XL"),
                (349261749,"Krabi V-brake"),(349261759,"Krabi Disk"),(349261760,"Lentus Mini"),(349261768,"GOA V-brake"),(349261771,"Easy Disk"),
@@ -467,7 +496,7 @@ for pid, n in [(260345186,"Street 700c"),(349261743,"The Tentacle"),(260340429,"
                (321841921,"Vecocraft Foldy-E Einhell"),(260347235,"Brina2 X1000"),(264034402,"Nbd S5I"),(273218901,"Slim"),
                (273255228,"X350"),(273267951,"Enduro Pro X"),(291838862,"Rider FT01 - 750W"),(338519904,"Rider FT01 - 1000W"),
                (314027238,"Segway Xyber"),(314180547,"Chopper FT02"),(339104476,"HTK 1000M"),(347573632,"Ponyboy"),(361026582,"City")]:
-    fila(pid, n, "", "Único")
+    unico(pid, n)
 # --- Infantiles (talle único, por rodado)
 fila(304920554,'Bayview Trail 24"',"Marin","Único",(122,142),MG,"Completo")
 fila(354117262,'San Quentin 24"',"Marin","Único",(122,142),MG,"Completo")
@@ -476,7 +505,7 @@ fila(305009753,'Bayview Trail 20"',"Marin","Único")
 for pid, n in [(260342484,"Power"),(260342490,"Jumper"),(349261711,"Bubble 14 Race"),(349261714,"Bubble 16 Race"),(349261795,"Bubble 20 Race"),
                (349261721,"Bubble 24 Race"),(349261724,"Bubble 26 Race"),(349261718,"Bubble 27,5 Race"),(349261814,"Chloe 16 Race"),
                (349261799,"Chloe 20 Race"),(349261804,"Chloe 24 Race"),(349261809,"Chloe 26 Race"),(349261720,"Chloe 27.5 Race"),(350552513,"Ant")]:
-    fila(pid, n, "", "Único")
+    unico(pid, n)
 ws.auto_filter.ref = f"A1:I{ws.max_row}"
 dv2 = DataValidation(type="list", formula1='"Sí,No,A verificar"', allow_blank=True); ws.add_data_validation(dv2); dv2.add(f"I2:I{ws.max_row+100}")
 ws.append([]); ws.append(["Verde = ya cargado. Amarillo = estimado con la guía de un modelo parecido (validar). Rojo = COMPLETAR. Una vez completo, este rango se usa para recomendar el talle y se puede agregar al final de la descripción de cada producto en Tiendanube."])
@@ -505,5 +534,49 @@ ter = ["Asfalto","Asfalto y mixto","Mixto y tierra","Todo terreno"]
 for i in range(len(tipos)):
     ws.append([tipos[i], prop[i] if i < len(prop) else None, ter[i] if i < len(ter) else None])
 
+
+# ------------------------------------------------------------ Datos obligatorios + Control
+ws = wb.create_sheet("Datos obligatorios")
+header(ws, ["Dato", "Obligatorio para", "Dónde se carga", "Qué pasa si falta"], [30, 34, 34, 60])
+REGLA = "El producto NO se ofrece en el asesor (ni en combos ni en sugerencias) hasta que se complete."
+for r in [
+ ("Fila en la solapa Productos", "Todo vehículo con stock", "Productos", "Un vehículo con stock en Tiendanube que no está en la planilla NO se ofrece. El control lo lista."),
+ ("Tipo de vehículo", "Todos los vehículos", "Productos", REGLA),
+ ("Propulsión", "Todos los vehículos", "Productos", REGLA),
+ ("Al menos un uso en 'Sí'", "Todos los vehículos", "Productos", REGLA),
+ ("Acepta silla de niños (Sí/No; 'Revisar' cuenta como vacío)", "Todos los vehículos", "Productos", REGLA),
+ ("Neumáticos con aire", "Todos los vehículos", "Productos", REGLA),
+ ("Terreno apto", "Todos los vehículos", "Productos", REGLA),
+ ("Requiere licencia/patente (Sí/No; 'Revisar' cuenta como vacío)", "Todos los vehículos", "Productos", REGLA),
+ ("Plegable", "Todos los vehículos", "Productos", REGLA),
+ ("Peso (kg)", "Todos los vehículos", "Productos", REGLA),
+ ("Autonomía (km)", "Todo lo que tiene motor", "Productos", REGLA),
+ ("Velocidad máx (km/h)", "Todo lo que tiene motor", "Productos", REGLA),
+ ("Carga máx (kg)", "Todo lo que tiene motor", "Productos", REGLA),
+ ("Rango de altura de CADA talle (o de 'Único')", "Todas las bicis", "Altura por modelo", "Si falta UN talle, la bici entera no se ofrece."),
+ ("Activo en asesor = Sí", "Todos los vehículos", "Productos", "Con 'No' se saca a propósito."),
+ ("Publicado, con precio y con al menos una foto", "Todos los productos (vehículos y accesorios)", "Tiendanube", "Lo controla el asesor en vivo."),
+ ("Stock en la variante que le sirve al cliente", "Todos los productos", "Tiendanube", "Lo controla el asesor en vivo."),
+ ("Opcionales (no bloquean)", "—", "Productos", "Subida máx, Nivel, Prioridad, Argumento de venta y Notas mejoran la recomendación pero no son obligatorios."),
+]: ws.append(list(r))
+for row in ws.iter_rows(min_row=2):
+    for c in row: c.alignment = WR
+
+ws = wb.create_sheet("Control")
+ws.column_dimensions["A"].width = 58; ws.column_dimensions["B"].width = 14
+ws.append(["Control de datos del asesor"]); ws["A1"].font = Font(bold=True, size=14)
+ws.append(["Se recalcula solo al editar la planilla. El asesor aplica las mismas reglas del lado del servidor."])
+ws.append([])
+for t, f in [("Vehículos en la planilla", "=COUNTA(Productos!A2:A1000)"),
+             ("✅ Listos para ofrecer", '=COUNTIF(Productos!C2:C1000,"SÍ")'),
+             ("⛔ NO se ofrecen (les falta algún dato)", '=COUNTIF(Productos!C2:C1000,"NO")'),
+             ("Filas de altura por completar", '=COUNTIF(\'Altura por modelo\'!H2:H2000,"COMPLETAR*")'),
+             ("Filas de altura estimadas (a validar)", '=COUNTIF(\'Altura por modelo\'!H2:H2000,"Estimado*")')]:
+    ws.append([t, f]); ws.cell(ws.max_row, 2).font = Font(bold=True, size=13)
+ws.append([])
+ws.append(["Para ver qué le falta a cada uno: solapa Productos, filtrar la columna '¿Se ofrece?' = NO y leer 'Qué falta'."])
+ws.append(["Vehículos con stock en Tiendanube que no figuran en la planilla: los lista la página /asesor/control del servidor."])
+wb.move_sheet("Control", offset=-(len(wb.sheetnames) - 2))
+wb.move_sheet("Datos obligatorios", offset=-(len(wb.sheetnames) - 3))
 wb.save(__import__("sys").argv[1])
 print(len(rows), "productos")

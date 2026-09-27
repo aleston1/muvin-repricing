@@ -23,6 +23,15 @@ Variables de entorno:
 | `ASESOR_WHATSAPP` | Número para el botón de WhatsApp, ej. `5491122334455` (opcional) |
 | `ASESOR_STORE_URL` | URL de la tienda (por defecto `https://www.muvin.com.ar`) |
 | `ASESOR_CACHE_SEG` | Segundos de caché del catálogo (por defecto 900) |
+| `ASESOR_SHEET_ID` | ID del Google Sheet de criterios (compartido "cualquiera con el enlace: lector"). Sin esto se usa `docs/asesor_criterios.xlsx` |
+| `ASESOR_SHEET_CACHE_SEG` | Segundos de caché de la planilla (por defecto 300) |
+
+**Regla de datos obligatorios:** un vehículo al que le falta UN dato obligatorio de
+la planilla (ver solapa "Datos obligatorios"), o que no tiene foto, precio o
+stock en Tiendanube, no se ofrece. `https://<este-servidor>/asesor/control`
+muestra qué se ofrece, qué no y qué falta cargar; la planilla calcula lo mismo
+en la columna "Qué falta" y en la solapa "Control". Las reglas están en
+`asesor_datos.faltantes()`.
 
 Los IDs de categorías de Tiendanube que usa están en `asesor.py`
 (`CAT_BICIS`, `CAT_ACCESORIOS`). `POST /api/asesor/refrescar` fuerza a releer

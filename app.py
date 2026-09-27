@@ -68,6 +68,10 @@ def sync_page():
 def asesor_page():
     return _sin_cache(app.send_static_file("asesor.html"))
 
+@app.route("/asesor/control")
+def asesor_control_page():
+    return _sin_cache(app.send_static_file("asesor_control.html"))
+
 @app.route("/api/items")
 def get_items():
     token   = request.args.get("token", TOKEN)
