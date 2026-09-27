@@ -385,7 +385,7 @@ T = {
 }
 def letra(t):
     t = str(t).upper().replace("CM","").strip()
-    m = re.match(r"^(XXS|XS|S|M|L|XL|XXL|SHORT|LONG|\d{2})", t.replace(" ",""))
+    m = re.match(r"^(SHORT|LONG|XXS|XS|XXL|XL|S|M|L|\d{2})", t.replace(" ",""))
     return m.group(1) if m else t
 def fila(pid, prod, marca, talle, rango=None, fuente="", estado=None, desc="A verificar"):
     lo, hi = rango if rango else (None, None)
