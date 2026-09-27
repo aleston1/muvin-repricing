@@ -29,8 +29,10 @@ txt = [
  ("• Etapas: las preguntas que hace el asesor, en orden, con sus opciones y qué criterio alimenta cada una.", False),
  ("• Criterios: el diccionario de cada criterio (qué significa, si es filtro o suma puntaje, valores posibles).", False),
  ("• Productos: una fila por producto de Tiendanube (vehículos). Acá se marca bajo qué criterios se recomienda cada uno.", False),
- ("• Accesorios: qué accesorios se ofrecen en el combo según el tipo de vehículo y las respuestas.", False),
- ("• Talles: tabla de altura → talle de cuadro, y altura por rodado para infantiles.", False),
+ ("• Accesorios: qué va en el combo (Esencial / Completo) según el vehículo y las respuestas.", False),
+ ("• Sugerencias: TODAS las categorías de la tienda y cuándo mostrarlas después del combo ('Completá tu equipo', 'También te puede interesar', 'Para más adelante').", False),
+ ("• Talles por modelo: altura → talle según la guía de CADA modelo (varía por marca y por modelo).", False),
+ ("• Talles genéricos: respaldo cuando un modelo no tiene guía cargada, y altura por rodado para infantiles.", False),
  ("• Listas: valores válidos para los desplegables.", False),
  ("", False),
  ("Colores en la pestaña Productos", True),
@@ -51,8 +53,8 @@ header(ws, ["#", "Etapa", "Pregunta al cliente", "Opciones (lo que ve el cliente
        [4, 16, 34, 48, 22, 58, 30])
 etapas = [
  (1, "Necesidad", "¿Qué querés resolver?",
-  "Moverme todos los días (trabajo, estudio, trámites)\nPasear y disfrutar\nHacer deporte o salir a la naturaleza\nLlevar carga o a los chicos\nEs para un chico o chica",
-  "Usos", "FILTRO: el producto tiene que tener marcado ese uso en Productos. Todavía no se habla de bici, monopatín ni moto.", "Siempre"),
+  "(OPCIÓN MÚLTIPLE)\nMoverme todos los días (trabajo, estudio, trámites)\nPasear y disfrutar\nHacer deporte o salir a la naturaleza\nLlevar a los chicos\nLlevar carga (compras, trabajo, mascota)\nEs para un chico o chica",
+  "Usos / Acepta silla de niños", "Se pueden marcar varias. FILTRO: el producto tiene que cumplir al menos una; cuantas más cumple, más puntaje. 'Llevar a los chicos' también lo cumple una bici con 'Acepta silla de niños' = Sí: en ese caso se suma la silla al combo. 'Llevar carga' suma portapaquetes, canasto o alforjas. Todavía no se habla de bici, monopatín ni moto.", "Siempre"),
  (2, "Distancia", "¿Cuántos km hacés por trayecto? (solo ida)",
   "Menos de 5 km\nEntre 5 y 15 km\nEntre 15 y 30 km\nMás de 30 km",
   "Autonomía (km) / Propulsión", "Eléctricos: FILTRO autonomía ≥ ida y vuelta × 1,5 (margen por frío, subidas, peso). Sin motor: más de 15 km suma puntaje a los eléctricos y a bicis de ruta/gravel.", "Necesidad ≠ chico"),
@@ -73,14 +75,16 @@ etapas = [
  (8, "Noche", "¿Vas a circular de noche?",
   "Casi siempre de día\nSí, también de noche", "Accesorios (luces / reflectivos)", "Define luces y chaleco del combo. No filtra vehículos.", "Siempre"),
  (9, "Altura", "¿Cuánto medís?", "Deslizador 90–210 cm",
-  "Altura mín / máx / Talles", "FILTRO: altura dentro del rango del producto. Si tiene talles, se busca una variante CON STOCK en el talle que corresponde (pestaña Talles).", "Siempre (para chicos: altura del chico)"),
+  "Altura mín / máx / Talles", "FILTRO: altura dentro del rango del producto. Si tiene talles, se busca una variante CON STOCK en el talle que corresponde según la tabla DE ESE MODELO (pestaña 'Talles por modelo'). Si el modelo no tiene tabla cargada, se usa 'Talles genéricos' y el asesor lo muestra como talle orientativo.", "Siempre (para chicos: altura del chico)"),
  (10, "Peso", "¿Cuánto pesás aproximadamente?", "Menos de 70 kg\n70 a 90 kg\n90 a 110 kg\nMás de 110 kg",
   "Carga máx (kg)", "FILTRO: peso de la persona + 10 kg ≤ carga máxima. Clave en monopatines (algunos soportan solo 90 kg).", "Propulsión ≠ Pedal"),
  (11, "Presupuesto", "¿Cuánto querés invertir en total?", "Rangos + monto libre + 'No tengo tope'",
   "Precio (en vivo de TN)", "Se reserva lo mínimo de los accesorios esenciales y el resto es tope del vehículo. Hasta +10% se muestra avisando cuánto se pasa.", "Siempre"),
- (12, "Ya tengo", "¿Ya tenés alguno de estos?", "Casco / Candado / Luces (según tipo de vehículo)",
+ (12, "Ya tengo", "¿Ya tenés alguno de estos?", "Casco / Candado / Luces / Inflador (según tipo de vehículo)",
   "Accesorios", "Lo que ya tiene no entra en el combo.", "Siempre"),
  ("—", "Stock", "(automático)", "—", "Stock TN", "FILTRO final: solo productos publicados con stock en la variante que le sirve. Nada sin stock llega al cliente.", "Siempre"),
+ ("—", "Completá tu equipo", "(automático, después del combo)", "Kit de herramientas, cámara de repuesto, sellador, etc.", "Pestaña Sugerencias", "Productos útiles según el vehículo elegido, fuera del combo. Uno por categoría, con stock.", "Siempre"),
+ ("—", "También te puede interesar", "(automático, al final)", "Limpieza, lubricación, indumentaria, intercomunicadores (moto), etc.", "Pestaña Sugerencias", "Vidriera de TODO el catálogo relacionado. Rota los productos entre visitas para que cada producto de la web se muestre alguna vez.", "Siempre"),
 ]
 for e in etapas: ws.append(list(e))
 for row in ws.iter_rows(min_row=2):
@@ -92,7 +96,9 @@ header(ws, ["Criterio (columna en Productos)", "Qué significa", "Tipo", "Valore
 crit = [
  ("Tipo de vehículo", "Familia del producto. Define qué accesorios lleva el combo y cómo se presenta.", "Info", "Ver Listas", "—"),
  ("Propulsión", "Pedal = sin motor. Asistida = motor que ayuda al pedalear. Eléctrica = anda sola (acelerador).", "Filtro", "Pedal / Asistida / Asistida + acelerador / Eléctrica", "4"),
- ("Uso: diario / paseo / deporte / carga / niños", "Marcar Sí en cada necesidad para la que se recomienda.", "Filtro", "Sí / No", "1"),
+ ("Uso: diario / paseo / deporte / llevar chicos / llevar carga / niños", "Marcar Sí en cada necesidad para la que se recomienda. Un producto puede tener varios usos.", "Filtro", "Sí / No", "1"),
+ ("Acepta silla de niños", "Si se le puede montar una silla para chicos (portapaquetes o tubo de asiento compatible). Hace que cuente para 'Llevar a los chicos' y suma la silla al combo.", "Filtro", "Sí / No / Revisar", "1"),
+ ("Neumáticos con aire", "Si usa cubiertas con aire (con cámara o tubeless). Define si el combo lleva inflador.", "Accesorios", "Sí / No", "—"),
  ("Terreno apto", "Dónde anda bien.", "Filtro", "Asfalto / Asfalto y mixto / Mixto y tierra / Todo terreno", "3"),
  ("Autonomía (km)", "Autonomía real a considerar (usar el valor de ficha).", "Filtro", "Número", "2"),
  ("Velocidad máx (km/h)", "Según ficha.", "Filtro", "Número", "5"),
@@ -115,16 +121,20 @@ for row in ws.iter_rows(min_row=2):
 # ------------------------------------------------------------ 4. Productos
 ws = wb.create_sheet("Productos")
 cols = ["ID Tiendanube", "Nombre", "Categoría en TN", "Tipo de vehículo", "Propulsión",
-        "Uso: diario", "Uso: paseo", "Uso: deporte / naturaleza", "Uso: carga / chicos", "Uso: niños",
+        "Uso: diario", "Uso: paseo", "Uso: deporte / naturaleza", "Uso: llevar chicos", "Uso: llevar carga", "Uso: niños", "Acepta silla de niños", "Neumáticos con aire",
         "Terreno apto", "Autonomía (km)", "Velocidad máx (km/h)", "Requiere licencia/patente",
         "Plegable", "Peso (kg)", "Carga máx (kg)", "Altura mín (cm)", "Altura máx (cm)", "Talles por variante",
         "Subida máx (%)", "Nivel", "Prioridad", "Activo en asesor", "Argumento de venta", "Notas / revisar"]
-header(ws, cols, [13, 30, 20, 20, 18, 9, 9, 11, 11, 9, 18, 11, 11, 12, 10, 9, 10, 10, 10, 10, 10, 10, 9, 10, 40, 44])
+header(ws, cols, [13, 30, 20, 20, 18, 9, 9, 11, 11, 11, 9, 11, 11, 18, 11, 11, 12, 10, 9, 10, 10, 10, 10, 10, 10, 9, 10, 40, 44])
 
 rows = []
 def add(pid, nombre, cat, tipo, prop, usos, terreno, aut=None, vel=None, lic="No", pleg="No", peso=None, carga=None,
-        amin=None, amax=None, talles="No", subida=None, nivel=None, activo="Sí", arg="", notas="", ficha=(), est=()):
-    rows.append(dict(v=[pid, nombre, cat, tipo, prop] + [("Sí" if u in usos else "No") for u in ("diario","paseo","deporte","carga","ninos")] +
+        amin=None, amax=None, talles="No", subida=None, nivel=None, activo="Sí", arg="", notas="", ficha=(), est=(),
+        silla=None, aire="Sí"):
+    if silla is None:
+        silla = "Sí" if "chicos" in usos else ("Revisar" if prop == "Pedal" or prop.startswith("Asistida") else "No")
+        if silla == "Revisar": est = tuple(est) + ("silla",)
+    rows.append(dict(v=[pid, nombre, cat, tipo, prop] + [("Sí" if u in usos else "No") for u in ("diario","paseo","deporte","chicos","carga","ninos")] + [silla, aire] +
                     [terreno, aut, vel, lic, pleg, peso, carga, amin, amax, talles, subida, nivel, 0, activo, arg, notas],
                      ficha=set(ficha), est=set(est)))
 
@@ -132,8 +142,8 @@ def add(pid, nombre, cat, tipo, prop, usos, terreno, aut=None, vel=None, lic="No
 F = ("aut","vel","peso","carga","pleg","subida")
 add(282264187,"Max G3","Monopatines","Monopatín eléctrico","Eléctrica",{"diario","paseo"},"Asfalto",80,45,"No","Sí",24.6,130,None,None,subida=30,nivel="Alto",ficha=F,arg="80 km de autonomía y doble suspensión hidráulica: el más completo para ir lejos todos los días.",notas="Velocidad máx 45 km/h: revisar normativa local de monopatines.")
 add(282311179,"GT3","Monopatines","Monopatín eléctrico","Eléctrica",{"diario","paseo"},"Asfalto",95,50,"No","Sí",39.5,150,subida=30,nivel="Alto",ficha=F,notas="39,5 kg: no apto para subir escaleras. Velocidad 50 km/h: revisar normativa.")
-add(297070699,"E2 PLUS E II","Monopatines","Monopatín eléctrico","Eléctrica",{"diario"},"Asfalto",25,25,"No","Sí",15,90,subida=12,nivel="Entrada",ficha=F,arg="Liviano (15 kg) y simple: ideal para trayectos cortos y para subirlo a casa.",notas="Carga máx 90 kg y subida 12%: solo llano.")
-add(312062393,"X30","Monopatines","Monopatín eléctrico","Eléctrica",{"diario"},"Asfalto",50,25,"No","Sí",20,120,nivel="Medio",ficha=("aut","vel","peso","carga"),est=("pleg",),notas="Micro. Confirmar que es plegable.")
+add(297070699,"E2 PLUS E II","Monopatines","Monopatín eléctrico","Eléctrica",{"diario"},"Asfalto",25,25,"No","Sí",15,90,subida=12,aire="No",nivel="Entrada",ficha=F,arg="Liviano (15 kg) y simple: ideal para trayectos cortos y para subirlo a casa.",notas="Carga máx 90 kg y subida 12%: solo llano.")
+add(312062393,"X30","Monopatines","Monopatín eléctrico","Eléctrica",{"diario"},"Asfalto",50,25,"No","Sí",20,120,aire="No",nivel="Medio",ficha=("aut","vel","peso","carga"),est=("pleg",),notas="Micro. Confirmar que es plegable.")
 add(363243370,"F3 Pro","Monopatines","Monopatín eléctrico","Eléctrica",{"diario"},"Asfalto",70,32,"No","Sí",19.3,120,subida=24,nivel="Medio",ficha=F)
 # Motos
 M = ("aut","vel","lic","peso","carga")
@@ -147,17 +157,17 @@ add(327910096,"CITI","Motos eléctricas","Moto eléctrica","Eléctrica",{"diario
 # E-bikes
 E = "Bicicletas eléctricas"
 add(260342361,"2Fold 20",E,"Bici eléctrica plegable","Asistida + acelerador",{"diario","paseo"},"Asfalto",40,25,"No","Sí",17.5,115,140,185,ficha=("aut","vel","pleg","peso","carga","amin","amax"),nivel="Medio",arg="La e-bike plegable más liviana: 17,5 kg, se guarda bajo el escritorio.")
-add(260343629,"HSD P9",E,"Bici eléctrica de carga","Asistida",{"diario","carga"},"Asfalto y mixto",120,None,"No","Sí",25.7,170,150,195,ficha=("aut","pleg","peso","carga","amin","amax"),nivel="Alto",arg="Lleva a los chicos o 60 kg atrás y se guarda vertical ocupando poco lugar.",notas="Carga total 170 kg / usuario hasta 120 kg.")
+add(260343629,"HSD P9",E,"Bici eléctrica de carga","Asistida",{"diario","carga","chicos"},"Asfalto y mixto",120,None,"No","Sí",25.7,170,150,195,ficha=("aut","pleg","peso","carga","amin","amax"),nivel="Alto",arg="Lleva a los chicos o 60 kg atrás y se guarda vertical ocupando poco lugar.",notas="Carga total 170 kg / usuario hasta 120 kg.")
 add(260344367,"2Fold 20 Fat",E,"Bici eléctrica plegable","Asistida + acelerador",{"diario","paseo"},"Asfalto y mixto",40,32,"No","Sí",20,115,140,185,ficha=("aut","vel","pleg","peso","carga","amin","amax"),nivel="Medio")
 add(260347235,"Brina2 X1000",E,"Bici eléctrica urbana/MTB","Asistida + acelerador",{"diario","paseo","deporte"},"Asfalto y mixto",70,38,"Revisar","No",22,None,ficha=("aut","vel","peso"),nivel="Alto",notas="1000 W y 38 km/h: revisar si requiere patente.")
-add(263963220,"Quick Haul P9",E,"Bici eléctrica de carga","Asistida",{"diario","carga"},"Asfalto",106,None,"No","No",23,150,145,195,ficha=("aut","peso","carga","amin","amax"),nivel="Alto",notas="Autonomía 53–106 km según modo. 145 cm con caño de asiento corto.")
+add(263963220,"Quick Haul P9",E,"Bici eléctrica de carga","Asistida",{"diario","carga","chicos"},"Asfalto",106,None,"No","No",23,150,145,195,ficha=("aut","peso","carga","amin","amax"),nivel="Alto",notas="Autonomía 53–106 km según modo. 145 cm con caño de asiento corto.")
 add(264034402,"Nbd S5I",E,"Bici eléctrica urbana","Asistida",{"diario","paseo"},"Asfalto",118,None,"No","Parcial",None,120,ficha=("aut","carga"),nivel="Alto",notas="Autonomía 51–118 km. Confirmar plegado (ficha: 'tiempo de plegado 5 s').")
 add(273218901,"Slim",E,"Bici eléctrica plegable","Asistida + acelerador",{"diario"},"Asfalto",40,30,"No","Sí",18,None,ficha=("aut","vel","pleg","peso"),nivel="Medio")
 add(273255228,"X350",E,"Bici eléctrica plegable (rodado ancho)","Asistida + acelerador",{"diario","paseo"},"Todo terreno",35,40,"Revisar","Sí",None,None,ficha=("aut","vel","pleg"),nivel="Medio",notas="Doble suspensión, 20x4.0.")
 add(273267951,"Enduro Pro X",E,"Bici eléctrica plegable (rodado ancho)","Asistida + acelerador",{"diario","paseo"},"Todo terreno",50,40,"Revisar","Sí",None,None,ficha=("aut","vel","pleg"),nivel="Medio")
 add(291838862,"Rider FT01 - 750W",E,"Bici eléctrica tipo moto","Asistida + acelerador",{"diario","paseo"},"Todo terreno",70,45,"Revisar","No",49,120,ficha=("aut","vel","peso","carga"),nivel="Medio",notas="49 kg: no apta para escaleras.")
 add(314027238,"Segway Xyber",E,"Bici eléctrica tipo moto","Asistida + acelerador",{"diario","paseo"},"Todo terreno",90,55,"Revisar","No",63,180,ficha=("aut","vel","peso","carga"),nivel="Alto")
-add(314180547,"Chopper FT02",E,"Bici eléctrica tipo moto","Asistida + acelerador",{"diario","paseo"},"Todo terreno",75,60,"Revisar","No",None,120,ficha=("aut","vel","carga"),nivel="Medio",notas="La ficha dice 'sin patente ni registro' con 60 km/h: validar legalmente.")
+add(314180547,"Chopper FT02",E,"Bici eléctrica tipo moto","Asistida + acelerador",{"diario","paseo"},"Todo terreno",75,60,"No","No",None,120,ficha=("aut","vel","carga","lic"),nivel="Medio",arg="Anda como una moto, pero sin patente ni licencia.")
 add(321841921,"Vecocraft Foldy-E Einhell",E,"Bici eléctrica plegable","Asistida",{"diario"},"Asfalto",30,25,"No","Sí",None,None,ficha=("aut","vel","pleg"),nivel="Entrada",arg="Usa baterías de herramientas Einhell: repuesto barato y fácil.")
 add(338519904,"Rider FT01 - 1000W",E,"Bici eléctrica tipo moto","Asistida + acelerador",{"diario","paseo"},"Todo terreno",70,45,"Revisar","No",49,120,ficha=("aut","vel","peso","carga"),nivel="Medio")
 add(339104476,"HTK 1000M",E,"Bici eléctrica urbana","Asistida",{"diario"},"Asfalto",None,None,"No","No",23,None,ficha=("peso",),nivel="Entrada",notas="Ficha incompleta: completar autonomía y velocidad.")
@@ -170,10 +180,10 @@ add(354117181,"Rift Zone E2 SHIMANO (2024)",E,"Bici eléctrica de montaña (eMTB
 add(361026582,"City",E,"Bici eléctrica tipo moto","Asistida + acelerador",{"diario"},"Asfalto",65,45,"Revisar","No",None,120,ficha=("aut","vel","carga"),nivel="Medio")
 
 # Bicis convencionales (estimado por tipo)
-def conv(ids_nombres, cat, tipo, usos, terreno, pleg="No", talles="Sí", notas="", activo="Sí", amin=None, amax=None):
+def conv(ids_nombres, cat, tipo, usos, terreno, pleg="No", talles="Sí", notas="", activo="Sí", amin=None, amax=None, silla=None):
     for pid, n in ids_nombres:
         est = ("usos","terreno") + (("pleg",) if pleg != "No" else ()) + (("amin","amax") if amin else ())
-        add(pid, n, cat, tipo, "Pedal", usos, terreno, pleg=pleg, talles=talles, amin=amin, amax=amax, activo=activo, notas=notas, est=est)
+        add(pid, n, cat, tipo, "Pedal", usos, terreno, pleg=pleg, talles=talles, amin=amin, amax=amax, activo=activo, notas=notas, est=est, silla=silla)
 
 conv([(260343619,"Quick 6"),(260345186,"Street 700c"),(260346843,"Space"),(260348567,"Alight 2 DD Disc"),(283613255,"Kentfield 1"),
       (284230738,"Fairfax 1 (2025)"),(284243181,"Presidio 1 (2025)"),(284246048,"Muirwoods (2022)"),(284254494,"Kentfield 2"),
@@ -182,7 +192,7 @@ conv([(260343619,"Quick 6"),(260345186,"Street 700c"),(260346843,"Space"),(26034
       (349261838,"Roadkiller Disk"),(350940557,"Kentfield 3"),(350940977,"Kentfield 1 ST (caño bajo)"),
       (350941779,"Fairfax 1 ST (caño bajo)"),(353200327,"Fairfax 3 (2025)"),(354117226,"Stinson 2 ST")],
      "Bicicletas > Urbanas", "Bici urbana", {"diario","paseo"}, "Asfalto")
-add(349261743,"The Tentacle","Bicicletas > Urbanas + Dirt/Stunt","Bici dirt/stunt","Pedal",{"deporte"},"Todo terreno",talles="Sí",est=("usos","terreno"),notas="Está en Urbanas y en Dirt/Stunt: revisar categoría.")
+add(349261743,"The Tentacle","Bicicletas > Urbanas + Dirt/Stunt (según API)","Bici de carga / urbana","Pedal",{"diario","paseo","carga","chicos"},"Asfalto",talles="Sí",est=("usos","terreno"),notas="La API de Tiendanube la devuelve en Urbanas y Dirt/Stunt (no en De Carga). ¿Quedó cruzada con las Alcatraz? Ver admin.")
 conv([(260340429,"Link D8"),(260340659,"Node D8"),(260341040,"Link C8"),(260341051,"Node D7i"),(260341563,"Eclipse D16"),
       (260342182,"Link A7"),(349261704,"Hopper Mini"),(349261708,"Hopper XL"),(349261749,"Krabi V-brake"),(349261759,"Krabi Disk"),
       (349261760,"Lentus Mini"),(349261768,"GOA V-brake"),(349261771,"Easy Disk"),(349261778,"Easy Fat"),(349261789,"Easy 8"),
@@ -200,10 +210,10 @@ conv([(260343873,"Trail 6 MTB 2021"),(260346819,"Cheetah"),(284282046,"Alpine Tr
       (349261728,"Boys Don't Cry"),(349261738,"Lone Ranger"),(349261821,"Sunday"),(349261825,"Sunday Low"),(349261827,"Big Time"),
       (352623351,"Rift Zone 1 (2026)"),(353164248,"Rift Zone 2 29 (2025)"),(353164254,"Bobcat Trail 5 (2025)"),
       (354117068,"Pine Mountain 1 - 29"),(354117137,"Team Marin 1")],
-     "Bicicletas > MTB", "Bici de montaña (MTB)", {"deporte"}, "Mixto y tierra")
+     "Bicicletas > MTB", "Bici de montaña (MTB)", {"deporte"}, "Mixto y tierra", silla="No")
 conv([(284309508,"Alcatraz 1"),(354117074,"Alcatraz 2"),(354117085,"Alcatraz 24\" (2026)")],
-     "Bicicletas > De Carga", "Bici dirt/stunt", {"deporte"}, "Todo terreno",
-     notas="Están en 'De Carga' pero son bicis de dirt/salto: revisar categoría en TN.")
+     "Bicicletas > De Carga (según API)", "Bici dirt/stunt", {"deporte"}, "Todo terreno", silla="No",
+     notas="La API de Tiendanube la devuelve dentro de 'De Carga' (ID 30153580). Es dirt jump: verificar categorías en el admin. Talles Short/Long (ver Talles por modelo).")
 # Infantiles
 def rango(n):
     m = re.search(r'(\d+(?:[.,]5)?)\s*"?(?: Race)?$', n.replace("\"",""))
@@ -215,11 +225,11 @@ for pid, n in [(260342484,"Power"),(260342490,"Jumper"),(304920554,"Bayview Trai
                (349261804,"Chloe 24 Race"),(349261809,"Chloe 26 Race"),(349261814,"Chloe 16 Race"),(350552513,"Ant"),
                (353164252,"Rift Zone 26"),(354117262,"San Quentin 24\"")]:
     rg = rango(n)
-    add(pid, n, "Vehículos para niños", "Bici infantil/juvenil", "Pedal", {"ninos"}, "Asfalto y mixto",
+    add(pid, n, "Vehículos para niños", "Bici infantil/juvenil", "Pedal", {"ninos"}, "Asfalto y mixto", silla="No",
         amin=rg[0] if rg else None, amax=rg[1] if rg else None, est=("usos","amin","amax") if rg else ("usos",),
         notas="" if rg else "Completar rodado / rango de altura.")
 
-KEY = {"aut":11,"vel":12,"lic":13,"pleg":14,"peso":15,"carga":16,"amin":17,"amax":18,"subida":20,"usos":(5,6,7,8,9),"terreno":10}
+KEY = {"aut":14,"vel":15,"lic":16,"pleg":17,"peso":18,"carga":19,"amin":20,"amax":21,"subida":23,"usos":(5,6,7,8,9,10),"silla":11,"aire":12,"terreno":13}
 for r in rows:
     ws.append(r["v"])
     ri = ws.max_row
@@ -229,40 +239,44 @@ for r in rows:
     for k in r["est"]:
         for ci in (KEY[k] if isinstance(KEY[k], tuple) else (KEY[k],)):
             ws.cell(ri, ci+1).fill = EST
-    ws.cell(ri, 25).alignment = WR; ws.cell(ri, 26).alignment = WR
+    ws.cell(ri, 28).alignment = WR; ws.cell(ri, 29).alignment = WR
 ws.auto_filter.ref = f"A1:{ws.cell(1, len(cols)).column_letter}{ws.max_row}"
 n = ws.max_row
 def dv(formula, rng):
     d = DataValidation(type="list", formula1=formula, allow_blank=True); ws.add_data_validation(d); d.add(rng)
 dv("=Listas!$A$2:$A$20", f"D2:D{n+200}")
 dv("=Listas!$B$2:$B$6", f"E2:E{n+200}")
-dv('"Sí,No"', f"F2:J{n+200}")
-dv("=Listas!$C$2:$C$6", f"K2:K{n+200}")
-dv('"Sí,No,Revisar"', f"N2:N{n+200}")
-dv('"Sí,No,Parcial"', f"O2:O{n+200}")
-dv('"Sí,No"', f"T2:T{n+200}")
-dv('"Entrada,Medio,Alto"', f"V2:V{n+200}")
-dv('"0,1,2,3"', f"W2:W{n+200}")
-dv('"Sí,No"', f"X2:X{n+200}")
+dv('"Sí,No"', f"F2:K{n+200}")
+dv('"Sí,No,Revisar"', f"L2:L{n+200}")
+dv('"Sí,No"', f"M2:M{n+200}")
+dv("=Listas!$C$2:$C$6", f"N2:N{n+200}")
+dv('"Sí,No,Revisar"', f"Q2:Q{n+200}")
+dv('"Sí,No,Parcial"', f"R2:R{n+200}")
+dv('"Sí,No"', f"W2:W{n+200}")
+dv('"Entrada,Medio,Alto"', f"Y2:Y{n+200}")
+dv('"0,1,2,3"', f"Z2:Z{n+200}")
+dv('"Sí,No"', f"AA2:AA{n+200}")
 ws.cell(1,1).comment = Comment("ID del producto en Tiendanube (número en la URL del admin). Es la llave con la que el asesor cruza stock y precio en vivo.", "Asesor")
 
-# ------------------------------------------------------------ 5. Accesorios
+# ------------------------------------------------------------ 5. Accesorios (combos)
 ws = wb.create_sheet("Accesorios")
 header(ws, ["Tipo de vehículo", "Rol en el combo", "Categoría TN (ID)", "Combo", "Condición", "Nivel a elegir", "Por qué (texto al cliente)"],
-       [26, 18, 28, 12, 30, 16, 70])
+       [26, 20, 34, 12, 34, 16, 70])
 acc = [
  ("Bicis (todas)", "Casco", "Cascos > Para ciclismo (30169776)", "Esencial", "Si no tiene casco", "Medio", "Lo primero: protege tu cabeza en cada salida."),
  ("Bicis (todas)", "Candado", "Candados y accesorios (30169763), sin 'Específicos de moto'", "Esencial", "Estaciona en la calle", "Alto, sin cables", "En la calle, un U-lock, cadena o plegable de alta seguridad es lo que frena un robo."),
  ("Bicis (todas)", "Candado", "Candados y accesorios (30169763)", "Esencial", "Guarda adentro", "Económico", "Para paradas cortas alcanza con uno liviano."),
  ("Bicis sin motor", "Luces", "Luces > Para bicicleta (30169757)", "Esencial", "Siempre (mejor nivel si anda de noche)", "Medio / Alto de noche", "Para ver y, sobre todo, que te vean."),
  ("Bicis eléctricas", "Luces", "Luces > Para bicicleta (30169757)", "Completo", "Solo si la ficha no trae luces", "Medio", "Luz extra para ser más visible."),
- ("Bicis (todas)", "Inflador", "Infladores > De mano (38434548)", "Completo", "Siempre", "Medio", "Cubiertas bien infladas: menos pinchaduras."),
- ("Bicis urbanas / plegables", "Portapaquetes o canasto", "Portapaquetes (30169786) / Bolsos y canastos (33821153)", "Completo", "Uso diario o paseo", "Medio", "Para llevar tus cosas sin cargar la espalda."),
- ("Bicis gravel / MTB / ruta", "Caramañola + soporte", "Caramañolas (30169771)", "Completo", "Uso deporte o distancia > 15 km", "Medio", "Hidratación a mano."),
+ ("Todo con 'Neumáticos con aire' = Sí (bicis, monopatines)", "Inflador", "Infladores > De mano (38434548) / De pie (38567338)", "Esencial", "Si no tiene inflador", "Medio", "Con la presión justa rueda mejor, gastás menos batería o piernas y evitás pinchaduras."),
+ ("Moto eléctrica", "Inflador", "Infladores > Eléctricos (38938743)", "Completo", "Si no tiene inflador", "Medio", "Para controlar la presión sin ir a la gomería."),
+ ("Bicis con 'Acepta silla de niños' = Sí", "Silla para niños", "Sillas para niños (30169830)", "Esencial", "Marcó 'Llevar a los chicos'", "Medio", "Para llevar a los chicos seguros desde el primer día."),
+ ("Bicis (todas)", "Portapaquetes, canasto o alforjas", "Portapaquetes (30169786) / Bolsos y canastos (33821153) / Mochilas, alforjas y morrales (33844521)", "Esencial", "Marcó 'Llevar carga'", "Medio", "Para llevar las compras o el trabajo sin cargar la espalda."),
+ ("Bicis urbanas / plegables", "Portapaquetes o canasto", "Portapaquetes (30169786) / Bolsos y canastos (33821153)", "Completo", "Uso diario o paseo (si no marcó carga)", "Medio", "Para llevar tus cosas sin cargar la espalda."),
+ ("Bicis gravel / MTB / ruta", "Caramañola + soporte", "Caramañolas, botellas y soportes (30169771)", "Completo", "Uso deporte o distancia > 15 km", "Medio", "Hidratación a mano."),
  ("Bicis infantiles", "Casco", "Cascos > Para ciclismo (30169776), solo infantiles", "Esencial", "Siempre", "Medio", "Para que aprenda con el casco puesto desde el primer día."),
  ("Monopatín eléctrico", "Casco", "Cascos > Para ciclismo (30169776)", "Esencial", "Si no tiene casco", "Medio", "A más de 20 km/h, el casco no es opcional."),
  ("Monopatín eléctrico", "Candado", "Candados y accesorios (30169763): cable o plegable", "Esencial", "Estaciona en la calle", "Medio", "Para atarlo cuando bajás a hacer algo."),
- ("Monopatín eléctrico", "Chaleco reflectivo", "Chalecos reflectivos (30170021)", "Esencial", "Circula de noche", "Económico", "El monopatín es bajo: que te vean los autos."),
  ("Monopatín eléctrico", "Porta celular", "Porta celulares > Para bicicleta (37360471)", "Completo", "Uso diario", "Medio", "Para usar el GPS sin sacar el celular del bolsillo."),
  ("Monopatín eléctrico", "Guantes", "Guantes > Para ciclismo (30169781)", "Completo", "Siempre", "Medio", "Más agarre y protección en las manos."),
  ("Moto eléctrica", "Casco de moto", "Cascos > Para moto (30170011)", "Esencial", "Siempre (obligatorio)", "Medio", "Obligatorio para circular."),
@@ -277,8 +291,106 @@ for a in acc: ws.append(list(a))
 for row in ws.iter_rows(min_row=2):
     for c in row: c.alignment = WR
 
-# ------------------------------------------------------------ 6. Talles
-ws = wb.create_sheet("Talles")
+# ------------------------------------------------------------ 6. Sugerencias (todo el catálogo)
+ws = wb.create_sheet("Sugerencias")
+header(ws, ["Categoría TN", "ID", "Para qué vehículos", "Dónde aparece", "Condición", "Gancho (texto al cliente)"],
+       [40, 11, 30, 26, 30, 70])
+B, EB, MO, MON, TODO = "Bicis", "Bicis eléctricas", "Motos eléctricas", "Monopatines", "Todos"
+BB = "Bicis y bicis eléctricas"
+sug = [
+ # Completá tu equipo (útil y concreto)
+ ("Herramientas y arreglos", 30169760, BB + ", monopatines", "Completá tu equipo", "Siempre", "Un multiherramienta chico te saca de apuros en la calle."),
+ ("Aceites y grasas (herramientas)", 35488195, BB, "Completá tu equipo", "Siempre", "Una cadena lubricada dura el doble y no hace ruido."),
+ ("Selladores y garrafas de CO2", 33843328, BB + ", monopatines tubeless", "Completá tu equipo", "Neumáticos con aire", "Para reparar una pinchadura en minutos, sin desarmar nada."),
+ ("Cámaras", 33843545, B, "Completá tu equipo", "Neumáticos con aire", "Una cámara de repuesto en la mochila y nunca quedás a pie."),
+ ("Bolsos bajo asiento", 39457222, BB, "Completá tu equipo", "Siempre", "Para llevar la cámara, el inflador y las llaves sin mochila."),
+ ("Porta celulares > Para bicicleta", 37360471, BB + ", monopatines", "Completá tu equipo", "Uso diario", "El GPS a la vista, sin sacar el celular del bolsillo."),
+ ("Porta celulares > Para moto", 35481325, MO, "Completá tu equipo", "Siempre", "El GPS a la vista mientras manejás."),
+ ("Timbres y bocinas", 30169819, BB, "Completá tu equipo", "Uso diario o paseo", "Para avisar en la bicisenda sin gritar."),
+ ("Espejos retrovisores", 30169817, BB + ", monopatines", "Completá tu equipo", "Uso diario", "Ver quién viene atrás sin darte vuelta."),
+ ("Guardabarros", 33843639, B, "Completá tu equipo", "Uso diario", "Llegar seco los días de lluvia."),
+ ("Pies de apoyo", 33843770, B, "Completá tu equipo", "Uso diario o paseo", "Para estacionarla parada en cualquier lado."),
+ ("Soportes para bicicleta", 30169785, BB, "Completá tu equipo", "Poco espacio para guardar", "Colgala en la pared y ganá lugar en casa."),
+ ("Portabicicletas para autos", 30169770, B, "Completá tu equipo", "Deporte / naturaleza o combina con auto", "Para llevarla a donde quieras salir a andar."),
+ ("Computadoras", 30170013, B, "Completá tu equipo", "Uso deporte", "Velocidad, distancia y tiempo de cada salida."),
+ ("Fundas para bicicleta", 30169769, BB, "Completá tu equipo", "Estaciona afuera o guarda en balcón", "La protege del sol y la lluvia."),
+ ("Cargadores > De bicicleta eléctrica", 35484713, EB, "Completá tu equipo", "Siempre", "Un segundo cargador para dejar en la oficina."),
+ ("Cargadores > De monopatín", 35484712, MON, "Completá tu equipo", "Siempre", "Un segundo cargador para dejar en la oficina."),
+ ("Cargadores > De moto", 35484711, MO, "Completá tu equipo", "Siempre", "Un segundo cargador para cargar donde estés."),
+ ("Baterías > De bicicleta eléctrica", 35485009, EB, "Completá tu equipo", "Distancia > 30 km", "Una batería extra duplica la autonomía."),
+ ("Baterías > De moto", 35485007, MO, "Completá tu equipo", "Distancia > 30 km", "Una batería extra duplica la autonomía."),
+ # También te puede interesar (vidriera)
+ ("Productos de limpieza y lubricación", 30169774, BB + ", monopatines", "También te puede interesar", "Siempre", "Limpia y como nueva por muchos años."),
+ ("Productos de limpieza y lubricación (moto)", 30582424, MO, "También te puede interesar", "Siempre", "Para que brille como el primer día."),
+ ("Indumentaria > Indumentaria", 30240325, BB, "También te puede interesar", "Siempre", "Ropa pensada para andar cómodo."),
+ ("Indumentaria > Pantalones", 30169998, BB, "También te puede interesar", "Uso diario o deporte", "Pantalones que no se enganchan en la cadena."),
+ ("Indumentaria > Remeras", 30169840, B, "También te puede interesar", "Uso deporte", "Técnicas, respirables y de secado rápido."),
+ ("Indumentaria > Zapatillas", 30169845, B, "También te puede interesar", "Uso deporte", "Más potencia en cada pedaleo."),
+ ("Indumentaria > Lentes", 30169768, BB + ", monopatines", "También te puede interesar", "Siempre", "Protegen del sol, el viento y los bichos."),
+ ("Guantes > Para ciclismo", 30169781, BB, "También te puede interesar", "Siempre", "Más agarre y menos cansancio en las manos."),
+ ("Guantes > Para moto", 30247745, MO, "También te puede interesar", "Siempre", "Protección y agarre."),
+ ("Navegadores e intercomunicadores", 30170014, MO, "También te puede interesar", "Siempre", "Hablá, escuchá música y seguí el GPS con el casco puesto."),
+ ("Luces > Para casco de moto", 33488999, MO, "También te puede interesar", "Circula de noche", "Más visible de noche, a la altura de los ojos de los autos."),
+ ("Cubre asientos para moto", 30170029, MO, "También te puede interesar", "Estaciona en la calle", "Asiento seco y fresco aunque quede al sol."),
+ ("Fundas de asiento", 30169780, BB, "También te puede interesar", "Uso paseo o diario", "Más comodidad en el asiento."),
+ ("Cubre puños de manubrio", 30170032, BB + ", monopatines", "También te puede interesar", "Siempre", "Manos abrigadas en invierno."),
+ ("Mochilas, alforjas y morrales", 33844521, TODO, "También te puede interesar", "Siempre", "Para llevar todo cómodo."),
+ ("Caramañolas, botellas y soportes", 30169771, BB, "También te puede interesar", "Siempre", "Hidratación a mano."),
+ ("Stickers y logos", 30169800, TODO, "También te puede interesar", "Siempre", "Hacela tuya."),
+ ("Adaptadores KLICKFix", 30169777, BB, "También te puede interesar", "Siempre", "Poné y sacá canastos y bolsos en un clic."),
+ ("Entrenadores y rodillos", 30169782, B, "También te puede interesar", "Uso deporte", "Seguí entrenando los días de lluvia."),
+ ("Sillas para niños > Accesorios y repuestos", 39455628, BB, "También te puede interesar", "Llevar a los chicos", "Accesorios para la silla."),
+ ("Trailers", 30153548, B, "También te puede interesar", "Llevar a los chicos o carga", "Llevá a los chicos o la carga en un trailer."),
+ ("Vehículos para niños", 30153643, TODO, "También te puede interesar", "Llevar a los chicos", "¿Y para los chicos? Que salgan a andar con vos."),
+ ("Usados seleccionados", 30154204, TODO, "También te puede interesar", "Presupuesto justo", "Usados revisados, más accesibles."),
+ # Mantenimiento / repuestos (se muestran como 'Para más adelante')
+ ("Cubiertas", 33843542, B, "Para más adelante", "Siempre", "Cuando gastes las cubiertas, las tenemos."),
+ ("Puños y cintas para manubrio", 33843559, B, "Para más adelante", "Siempre", "Puños ergonómicos: menos hormigueo en las manos."),
+ ("Asientos y accesorios", 33843551, B, "Para más adelante", "Uso paseo o distancia > 15 km", "Un buen asiento cambia todo en las salidas largas."),
+ ("Pedales y accesorios", 33843555, B, "Para más adelante", "Siempre", "Pedales con más agarre."),
+ ("Repuestos para bicicleta eléctrica", 35505626, EB, "Para más adelante", "Siempre", "Repuestos originales cuando los necesites."),
+ ("Repuestos para monopatines", 30753392, MON, "Para más adelante", "Siempre", "Repuestos originales cuando los necesites."),
+ ("Repuestos para motos", 30753379, MO, "Para más adelante", "Siempre", "Repuestos originales cuando los necesites."),
+ ("Resto de 'Componentes de bicicleta' (aros, cadenas, cambios, frenos, etc.)", 33843997, B, "Para más adelante", "Siempre", "Todo para mantenerla y mejorarla."),
+]
+for x in sug: ws.append(list(x))
+for row in ws.iter_rows(min_row=2):
+    for c in row: c.alignment = WR
+ws.append([]); ws.append(["Regla de rotación: en cada visita se elige 1 producto con stock por categoría, alternando entre visitas (los menos mostrados primero), para que TODO el catálogo tenga exposición. 'Prioridad' en Productos puede fijar uno."])
+ws.cell(ws.max_row, 1).font = Font(italic=True)
+
+# ------------------------------------------------------------ 7. Talles por modelo
+ws = wb.create_sheet("Talles por modelo")
+header(ws, ["Marca", "Modelo o familia (texto en el nombre del producto)", "Talle", "Altura desde (cm)", "Altura hasta (cm)", "Fuente", "Estado"],
+       [12, 40, 12, 14, 14, 36, 22])
+FUENTE = "Marin Sizing Guide 2022 (PDF oficial)"
+def tt(marca, modelos, tabla, estado="Validar con guía vigente"):
+    for m in modelos:
+        for t, lo, hi in tabla:
+            ws.append([marca, m, t, lo, hi, FUENTE, estado])
+            ws.cell(ws.max_row, 7).fill = EST
+tt("Marin", ["Kentfield"], [("S",157,170),("M",168,178),("L",175,188),("XL",185,196)])
+tt("Marin", ["Fairfax","Presidio"], [("XS",150,157),("S",155,168),("M",165,178),("L",175,188),("XL",185,193)])
+tt("Marin", ["Muirwoods"], [("XS",150,160),("S",157,170),("M",168,180),("L",178,188),("XL",185,196)])
+tt("Marin", ["Stinson"], [("S",152,165),("M",163,175),("L",173,185),("XL",183,191)])
+tt("Marin", ["Stinson ST", "Stinson 2 ST"], [("S",152,165),("M",163,175),("L",173,180)])
+tt("Marin", ["DSX"], [("S",157,168),("M",165,178),("L",175,188),("XL",185,196)])
+tt("Marin", ["Nicasio"], [("47",146,152),("50",150,160),("52",157,165),("54",163,175),("56",173,183),("58",180,188),("60",185,196)])
+tt("Marin", ["Gestalt"], [("50",152,160),("52",157,165),("54",163,175),("56",173,183),("58",180,188),("60",185,196)])
+tt("Marin", ["Four Corners"], [("XS",150,160),("S",157,170),("M",168,180),("L",178,188),("XL",185,196)])
+tt("Marin", ["Bobcat Trail","Bolinas Ridge","San Quentin 1","Pine Mountain","Team Marin"], [("S",160,168),("M",165,178),("L",175,185),("XL",183,196)], "Validar: asumido 'Hardtail 29'")
+tt("Marin", ["Rift Zone 1","Rift Zone 2 29","Alpine Trail","Apine Trail","Rift Zone E2"], [("S",160,170),("M",168,180),("L",178,188),("XL",185,196)])
+tt("Marin", ["El Roy"], [("Regular",165,178),("Grande",175,196)])
+tt("Marin", ["Alcatraz 1","Alcatraz 2"], [("Short",152,175),("Long",170,196)])
+tt("Marin", ["Rift Zone 26"], [("Único",140,157)])
+tt("Marin", ["San Quentin 24","Bayview Trail"], [("Único",122,145)])
+ws.append([]); ws.append(["Cómo lo usa el asesor: busca la fila cuya Marca y 'Modelo o familia' aparezcan en el nombre del producto (gana la coincidencia más larga). Si no hay, usa 'Talles genéricos' y muestra el talle como orientativo."])
+ws.cell(ws.max_row, 1).font = Font(italic=True)
+ws.append(["Pendiente: cargar guías vigentes de Marin (2025/26), Shulz, Tern, Dahon, Kross, Cannondale, Liv y el resto de las marcas."])
+ws.cell(ws.max_row, 1).font = Font(italic=True)
+
+# ------------------------------------------------------------ 8. Talles genéricos
+ws = wb.create_sheet("Talles genéricos")
 header(ws, ["Talle de cuadro", "Altura desde (cm)", "Altura hasta (cm)", "Equivalente MTB (pulgadas)", "Equivalente ruta/gravel (cm)"], [16, 16, 16, 24, 26])
 for t in [("XXS",135,152,"—","—"),("XS",148,163,"13–14\"","< 50"),("S",158,172,"15–16\"","50–52"),("M",168,181,"17–18\"","53–55"),
           ("L",177,190,"19–20\"","56–58"),("XL",186,198,"21\"+","59+"),("XXL",194,210,"—","—")]: ws.append(list(t))
@@ -286,9 +398,9 @@ ws.append([]); ws.append(["Rodado (infantiles)", "Altura desde (cm)", "Altura ha
 for c in ws[ws.max_row]: c.font = Font(bold=True)
 for t in [('12"',85,100,"2–4 años"),('14"',95,110,"3–5 años"),('16"',105,120,"4–6 años"),('20"',115,135,"6–9 años"),
           ('24"',130,150,"8–12 años"),('26"',145,165,"11+ años"),('27,5"',150,175,"juvenil")]: ws.append(list(t))
-ws.append([]); ws.append(["Los rangos se solapan a propósito: en el borde se ofrecen los dos talles. Ajustar por marca si hace falta."])
+ws.append([]); ws.append(["Solo se usa si el modelo no está en 'Talles por modelo'. El asesor lo muestra como talle orientativo."])
 
-# ------------------------------------------------------------ 7. Listas
+# ------------------------------------------------------------ 9. Listas
 ws = wb.create_sheet("Listas")
 header(ws, ["Tipo de vehículo", "Propulsión", "Terreno apto"], [36, 24, 20])
 tipos = ["Bici urbana","Bici plegable","Bici gravel","Bici gravel/ruta","Bici gravel/MTB","Bici de ruta","Bici de montaña (MTB)","Bici dirt/stunt",
