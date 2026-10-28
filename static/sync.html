@@ -662,12 +662,17 @@ function render(){
   const estado = document.getElementById('f-estado').value;
   const soloStock = document.getElementById('f-stock').checked;
 
+  // Los vínculos Hansa son referencias del ERP pero no publicaciones verificadas;
+  // no cuentan para determinar si un producto "falta" o no en cada plataforma.
+  const mlReal = r => r.ml.filter(i => i.status !== 'hansa');
+  const tnReal = r => r.tn.filter(p => !p.hansa);
+
   const conStock = ROWS.filter(r => r.stock_total > 0);
-  const faltaAlguna = conStock.filter(r => !r.ml.length || (tnDisponible && !r.tn.length));
-  const faltaAmbas  = conStock.filter(r => !r.ml.length && (!tnDisponible || !r.tn.length));
+  const faltaAlguna = conStock.filter(r => !mlReal(r).length || (tnDisponible && !tnReal(r).length));
+  const faltaAmbas  = conStock.filter(r => !mlReal(r).length && (!tnDisponible || !tnReal(r).length));
   document.getElementById('st-erp').textContent  = conStock.length;
-  document.getElementById('st-ml').textContent   = conStock.filter(r=>r.ml.length).length;
-  document.getElementById('st-tn').textContent   = tnDisponible ? conStock.filter(r=>r.tn.length).length : '—';
+  document.getElementById('st-ml').textContent   = conStock.filter(r=>mlReal(r).length).length;
+  document.getElementById('st-tn').textContent   = tnDisponible ? conStock.filter(r=>tnReal(r).length).length : '—';
   document.getElementById('st-falta').textContent = faltaAlguna.length;
   document.getElementById('st-ambas').textContent = faltaAmbas.length;
 
@@ -677,10 +682,10 @@ function render(){
   if (soloStock && !buscar) rows = rows.filter(r => r.stock_total > 0);
   if (buscar) rows = rows.filter(r =>
     r.sku_raiz.toLowerCase().includes(buscar) || (r.nombre||'').toLowerCase().includes(buscar));
-  if (estado === 'falta')       rows = rows.filter(r => !r.ml.length || (tnDisponible && !r.tn.length));
-  if (estado === 'falta-ml')    rows = rows.filter(r => !r.ml.length);
-  if (estado === 'falta-tn')    rows = rows.filter(r => tnDisponible && !r.tn.length);
-  if (estado === 'falta-ambas') rows = rows.filter(r => !r.ml.length && (!tnDisponible || !r.tn.length));
+  if (estado === 'falta')       rows = rows.filter(r => !mlReal(r).length || (tnDisponible && !tnReal(r).length));
+  if (estado === 'falta-ml')    rows = rows.filter(r => !mlReal(r).length);
+  if (estado === 'falta-tn')    rows = rows.filter(r => tnDisponible && !tnReal(r).length);
+  if (estado === 'falta-ambas') rows = rows.filter(r => !mlReal(r).length && (!tnDisponible || !tnReal(r).length));
 
   const tbody = document.getElementById('tbody');
   if (!rows.length){
@@ -696,7 +701,7 @@ function render(){
       : (r.tn.length
         ? r.tn.map(p=>`<a class="link-tn" href="${p.url||'#'}" target="_blank" rel="noopener">✓ ${p.hansa?'vínculo Hansa':(p.published?'visible':'oculto')}</a>`).join('<br>')
         : '<span class="badge badge-red">falta</span>');
-    const falta = !r.ml.length || (tnDisponible && !r.tn.length);
+    const falta = !mlReal(r).length || (tnDisponible && !tnReal(r).length);
     const tieneDesc = !!descCacheGet(r.sku_raiz);
     return `<tr>
       <td style="text-align:center"><input type="checkbox" class="sel-desc" data-sku="${r.sku_raiz}"></td>
